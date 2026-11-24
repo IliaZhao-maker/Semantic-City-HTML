@@ -1,0 +1,3074 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Semantic Fountain</title>
+    <link rel="icon" href="data:," />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Syne:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        --u: min(calc(100vw / 940), calc(100vh / 610));
+        --font-display: "Syne", "Helvetica Neue", Arial, sans-serif;
+        --font-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
+        --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+        --font-mono: "IBM Plex Mono", Consolas, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background-color: #c4ccee;
+        font-family: var(--font-sans);
+        user-select: none;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .lc-stage-container {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+        background: #c4ccee;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+      }
+
+      .lc-stage-bg {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        background:
+          radial-gradient(circle at 36% 45%, rgba(210, 228, 255, 0.36), transparent 52%),
+          radial-gradient(circle at 72% 28%, rgba(226, 198, 255, 0.28), transparent 48%),
+          linear-gradient(to bottom, rgba(204, 213, 244, 0.24), rgba(132, 165, 205, 0.28)),
+          #c4ccee;
+        pointer-events: none;
+      }
+
+      .lc-canvas-layer {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        pointer-events: none;
+      }
+
+      #lcRainCanvas {
+        z-index: 1;
+      }
+
+      #lcGlCanvas {
+        z-index: 2;
+      }
+
+      #lcFrontCanvas {
+        z-index: 3;
+      }
+
+      /* Responsive corner-hugging WebGL2 jelly dialog box tuned for English narrative copy */
+      .jelly-dialog-wrap {
+        position: relative;
+        z-index: 6;
+        pointer-events: auto;
+        width: clamp(440px, 54vw, 700px);
+        height: clamp(185px, 24vh, 235px);
+        align-self: flex-start;
+        margin: auto 0 clamp(10px, 2vh, 22px) clamp(10px, 2vw, 22px);
+        flex-shrink: 0;
+        user-select: none;
+      }
+
+      @media (max-width: 720px) {
+        .jelly-dialog-wrap {
+          width: calc(100vw - 16px);
+          height: clamp(175px, 27vh, 220px);
+          margin: auto 8px 8px 8px;
+        }
+      }
+
+      .jelly-dialog-canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+        cursor: pointer;
+        touch-action: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="lc-stage-container" id="lcStageContainer">
+      <div class="lc-stage-bg" aria-hidden="true"></div>
+      <canvas class="lc-canvas-layer" id="lcRainCanvas"></canvas>
+      <canvas class="lc-canvas-layer" id="lcGlCanvas"></canvas>
+      <canvas class="lc-canvas-layer" id="lcFrontCanvas"></canvas>
+
+      <div class="jelly-dialog-wrap" id="lcJellyWrap" title="Move or drag across the jelly dialog box to deform it">
+        <canvas class="jelly-dialog-canvas" id="lcJellyCanvas"></canvas>
+      </div>
+    </div>
+
+    <script>
+      // ==================== 1. WebGL2 Elastic Jelly Dialog Box Engine ====================
+      function createJellyDialogBox(canvasId, initialSpeaker, initialLines, opts = {}) {
+        const jCanvas = document.getElementById(canvasId);
+        if (!jCanvas) return null;
+
+        let jgl = null;
+        try {
+          jgl = jCanvas.getContext("webgl2", {
+            alpha: true,
+            antialias: true,
+            premultipliedAlpha: false
+          });
+        } catch (err) {
+          console.error("Failed to initialize Jelly WebGL2 context:", err);
+          return null;
+        }
+        if (!jgl) return null;
+
+        jgl.getExtension("EXT_color_buffer_float");
+        jgl.getExtension("OES_texture_float_linear");
+
+        const vsSrc = `#version 300 es
+          in vec2 p;
+          void main() {
+            gl_Position = vec4(p, 0.0, 1.0);
+          }
+        `;
+
+        // Buffer A: Stores interactive pointer pressure & elastic impulse decay field
+        const fsBufASrc = `#version 300 es
+          precision highp float;
+          out vec4 O;
+          uniform vec2 iResolution;
+          uniform vec4 iMouse;
+          uniform float uImpulse;
+          uniform vec2 uImpulsePos;
+          uniform sampler2D iChannel0;
+
+          void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            float jelly = texture(iChannel0, uv).r;
+
+            if (iMouse.z > 0.0) {
+              vec2 m = iMouse.xy / iResolution.xy;
+              vec2 pm = iMouse.zw / iResolution.xy;
+              float speed = clamp(length(m - pm) * 56.0, 0.0, 14.5);
+              float pressure = exp(-distance(uv, m) * 12.5);
+              jelly = clamp(jelly + pressure * speed * 0.017 - 0.0025, 0.0, 0.92);
+            } else {
+              jelly = max(jelly - 0.032, 0.0);
+            }
+
+            if (uImpulse > 0.001) {
+              float pImp = exp(-distance(uv, uImpulsePos) * 8.0);
+              jelly = clamp(jelly + pImp * uImpulse, 0.0, 0.92);
+            }
+
+            O = vec4(jelly, 0.0, 0.0, 1.0);
+          }
+        `;
+
+        // Main Image Pass: Smooth-min fused rounded body + title tab with refined silver-lavender editorial text
+        const fsImageSrc = `#version 300 es
+          precision highp float;
+          out vec4 O;
+          uniform vec2 iResolution;
+          uniform float iTime;
+          uniform vec4 iMouse;
+          uniform vec2 uBoxSize;
+          uniform vec3 uTabSpec;
+          uniform float uTextAlpha;
+          uniform float uTextShift;
+          uniform sampler2D iChannel0;
+          uniform sampler2D iChannel1;
+
+          float hash(vec2 p) {
+            return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+          }
+          float noise(vec2 p) {
+            vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+            return mix(
+              mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+              mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
+              u.y
+            );
+          }
+          vec2 n2(vec2 p, float t, float o) {
+            return vec2(noise(p + t), noise(p + t + o));
+          }
+          float sdRoundRect(vec2 p, vec2 b, float r) {
+            vec2 q = abs(p) - b + r;
+            return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+          }
+          float smin(float a, float b, float k) {
+            float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+            return mix(b, a, h) - k * h * (1.0 - h);
+          }
+
+          float sdFreeformJelly(vec2 p, vec2 box, vec3 tabSpec, float jelly) {
+            vec2 boxCenter = vec2(0.0, -0.095);
+            vec2 tabCenter = vec2(-box.x + tabSpec.x + 0.04, boxCenter.y + box.y + tabSpec.y * 0.56);
+            float rBase = min(box.y * 0.42, 0.125) + jelly * 0.032;
+            float dMain = sdRoundRect(p - boxCenter, box, rBase);
+            float dTab  = sdRoundRect(p - tabCenter, tabSpec.xy, tabSpec.z);
+            return smin(dMain, dTab, 0.042);
+          }
+
+          void main() {
+            vec2 R = iResolution.xy;
+            vec2 U = gl_FragCoord.xy;
+            float aspect = R.x / max(1.0, R.y);
+            vec2 uv = (U - 0.5 * R) / R.y;
+            vec2 m  = (iMouse.xy - 0.5 * R) / R.y;
+            float jelly = texture(iChannel1, U / R).r;
+
+            vec2 box = vec2(
+              min(uBoxSize.x, 0.5 * aspect - 0.075),
+              min(uBoxSize.y, 0.305)
+            );
+            vec3 tabSpec = vec3(
+              min(uTabSpec.x, box.x * 0.92),
+              min(uTabSpec.y, 0.092),
+              uTabSpec.z
+            );
+
+            // Subtle refraction on text when interacting, crisp when resting
+            vec2 toM = m - uv;
+            vec2 tUV = uv - normalize(toM + 1e-5) * exp(-length(toM) * 2.6) * jelly * 0.022;
+            tUV.y -= uTextShift;
+
+            vec2 texCoord = vec2(tUV.x / aspect + 0.5, 0.5 - tUV.y);
+            vec4 txtSample = vec4(0.0);
+            if (texCoord.x >= 0.0 && texCoord.x <= 1.0 && texCoord.y >= 0.0 && texCoord.y <= 1.0) {
+              txtSample = texture(iChannel0, texCoord);
+            }
+            float tVis = clamp(uTextAlpha, 0.0, 1.0);
+            float nameTxt = txtSample.r * tVis;
+            float dlgTxt  = txtSample.g * tVis;
+            float txtHalo = txtSample.b * tVis;
+
+            // Organic breathing ripple and pointer indentation
+            vec2 uvB = uv + (n2(uv * 4.5, iTime * 0.85, 10.0) - 0.5) * 0.022;
+            vec2 e = vec2(0.0015, 0.0);
+            vec2 n = normalize(vec2(
+              sdFreeformJelly(uvB + e.xy, box, tabSpec, jelly) - sdFreeformJelly(uvB - e.xy, box, tabSpec, jelly),
+              sdFreeformJelly(uvB + e.yx, box, tabSpec, jelly) - sdFreeformJelly(uvB - e.yx, box, tabSpec, jelly)
+            ));
+
+            vec2 uvD = uvB - n * jelly * exp(-distance(uvB, m) * 9.5) * 0.11;
+            uvD += (n2(uvD * 9.0, iTime, 20.0) - 0.5) * jelly * 0.036;
+
+            float d = sdFreeformJelly(uvD, box, tabSpec, jelly);
+
+            float insideAlpha = 1.0 - smoothstep(-0.003, 0.006, d);
+            if (insideAlpha <= 0.002) {
+              O = vec4(0.0);
+              return;
+            }
+
+            // Deep midnight-violet translucent jelly body for strong editorial contrast
+            vec3 bodyBase = mix(vec3(0.042, 0.034, 0.096), vec3(0.112, 0.084, 0.198), smoothstep(-0.30, 0.0, d));
+            bodyBase += vec3(0.20, 0.15, 0.34) * jelly * exp(-distance(uv, m) * 4.0);
+
+            // Delicate moonlit rim highlight
+            float rimMask = smoothstep(-0.009, -0.003, d) * (1.0 - smoothstep(-0.0005, 0.0035, d));
+
+            vec3 col = bodyBase;
+            col = mix(col, vec3(0.90, 0.89, 0.99), rimMask * 0.78);
+
+            // Soft drop shadow encoded in blue channel
+            col *= 1.0 - clamp(txtHalo * 0.42, 0.0, 0.42);
+
+            // Refined pearl silver-lavender title & clean parchment-white narrative copy (no rainbow)
+            vec3 titleTone = mix(vec3(0.83, 0.84, 0.99), vec3(0.96, 0.95, 1.0), 0.5 + 0.5 * sin(uv.x * 1.4 - iTime * 0.55));
+            col = mix(col, titleTone, clamp(nameTxt * 1.15, 0.0, 1.0));
+            col = mix(col, vec3(0.96, 0.97, 1.0), clamp(dlgTxt * 1.15, 0.0, 1.0));
+
+            float txtMask = max(nameTxt, dlgTxt);
+            float finalAlpha = clamp(insideAlpha * 0.90 + rimMask * 0.95 + txtMask * 0.98, 0.0, 0.97);
+            O = vec4(col, finalAlpha);
+          }
+        `;
+
+        function compileProg(fsSourceStr) {
+          const p = jgl.createProgram();
+          [
+            [jgl.VERTEX_SHADER, vsSrc],
+            [jgl.FRAGMENT_SHADER, fsSourceStr]
+          ].forEach(([type, src]) => {
+            const sh = jgl.createShader(type);
+            jgl.shaderSource(sh, src);
+            jgl.compileShader(sh);
+            if (!jgl.getShaderParameter(sh, jgl.COMPILE_STATUS)) {
+              console.error("Jelly shader compile error:", jgl.getShaderInfoLog(sh));
+            }
+            jgl.attachShader(p, sh);
+          });
+          jgl.linkProgram(p);
+          return p;
+        }
+
+        const progA = compileProg(fsBufASrc);
+        const progImg = compileProg(fsImageSrc);
+
+        const quad = jgl.createBuffer();
+        jgl.bindBuffer(jgl.ARRAY_BUFFER, quad);
+        jgl.bufferData(jgl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), jgl.STATIC_DRAW);
+
+        const fbos = [0, 1].map(() => {
+          const tex = jgl.createTexture();
+          const fbo = jgl.createFramebuffer();
+          jgl.bindTexture(jgl.TEXTURE_2D, tex);
+          jgl.texParameteri(jgl.TEXTURE_2D, jgl.TEXTURE_MIN_FILTER, jgl.LINEAR);
+          jgl.texParameteri(jgl.TEXTURE_2D, jgl.TEXTURE_MAG_FILTER, jgl.LINEAR);
+          jgl.texParameteri(jgl.TEXTURE_2D, jgl.TEXTURE_WRAP_S, jgl.CLAMP_TO_EDGE);
+          jgl.texParameteri(jgl.TEXTURE_2D, jgl.TEXTURE_WRAP_T, jgl.CLAMP_TO_EDGE);
+          jgl.bindFramebuffer(jgl.FRAMEBUFFER, fbo);
+          jgl.framebufferTexture2D(jgl.FRAMEBUFFER, jgl.COLOR_ATTACHMENT0, jgl.TEXTURE_2D, tex, 0);
+          return { tex, fbo };
+        });
+
+        const textCvs = document.createElement("canvas");
+        textCvs.width = 1600;
+        textCvs.height = 720;
+        const tCtx = textCvs.getContext("2d");
+
+        const textTex = jgl.createTexture();
+        jgl.bindTexture(jgl.TEXTURE_2D, textTex);
+        jgl.texParameteri(jgl.TEXTURE_2D, jgl.TEXTURE_MIN_FILTER, jgl.LINEAR);
+        jgl.texParameteri(jgl.TEXTURE_2D, jgl.TEXTURE_MAG_FILTER, jgl.LINEAR);
+        jgl.texParameteri(jgl.TEXTURE_2D, jgl.TEXTURE_WRAP_S, jgl.CLAMP_TO_EDGE);
+        jgl.texParameteri(jgl.TEXTURE_2D, jgl.TEXTURE_WRAP_T, jgl.CLAMP_TO_EDGE);
+
+        const boxHalfWMax = opts.boxHalfW || 1.65;
+        const boxHalfHMax = opts.boxHalfH || 0.305;
+        const tabHalfHMax = opts.tabHalfH || 0.088;
+        const tabRad = opts.tabRad || 0.082;
+
+        let targetBoxSize = [1.35, 0.305];
+        let currentBoxSize = [1.35, 0.305];
+        let targetTabSpec = [0.75, 0.088, 0.082];
+        let currentTabSpec = [0.75, 0.088, 0.082];
+        let hasInitializedLayout = false;
+
+        let curSpeaker = initialSpeaker || "The Fountain";
+        let curLines = Array.isArray(initialLines) ? initialLines : [String(initialLines || "")];
+        let pendingContent = null;
+        let transPhase = "idle";
+        let transAlpha = 1.0;
+        let lastRenderTime = null;
+        let fboIdx = 0;
+        let mouse = [0, 0];
+        let prevMouse = [0, 0];
+        let pointerActive = false;
+        let moveTimeout = null;
+        let impulseStrength = 0.55;
+        let impulsePos = [0.35, 0.55];
+
+        // Word-aware line wrapper with clean fallback for long tokens
+        function wrapCanvasLines(ctx, text, maxWidth) {
+          const words = text.split(/\s+/).filter(Boolean);
+          if (words.length === 0) return [""];
+
+          const lines = [];
+          let current = "";
+
+          for (let i = 0; i < words.length; i++) {
+            const word = words[i];
+            const test = current ? current + " " + word : word;
+            if (ctx.measureText(test).width <= maxWidth) {
+              current = test;
+            } else {
+              if (current) lines.push(current);
+              if (ctx.measureText(word).width <= maxWidth) {
+                current = word;
+              } else {
+                // Break overly long token character by character
+                let chunk = "";
+                for (const ch of Array.from(word)) {
+                  if (ctx.measureText(chunk + ch).width > maxWidth && chunk) {
+                    lines.push(chunk);
+                    chunk = ch;
+                  } else {
+                    chunk += ch;
+                  }
+                }
+                current = chunk;
+              }
+            }
+          }
+          if (current) lines.push(current);
+          return lines;
+        }
+
+        // Cross-browser tracked text measurement & rendering
+        function measureTrackedText(ctx, text, tracking) {
+          if (!tracking) return ctx.measureText(text).width;
+          const chars = Array.from(text);
+          let total = 0;
+          for (let i = 0; i < chars.length; i++) {
+            total += ctx.measureText(chars[i]).width;
+            if (i < chars.length - 1) total += tracking;
+          }
+          return total;
+        }
+
+        function fillTrackedText(ctx, text, x, y, tracking) {
+          if (!tracking) {
+            ctx.fillText(text, x, y);
+            return;
+          }
+          const chars = Array.from(text);
+          let cursor = x;
+          for (let i = 0; i < chars.length; i++) {
+            ctx.fillText(chars[i], cursor, y);
+            cursor += ctx.measureText(chars[i]).width + tracking;
+          }
+        }
+
+        function updateTextTexture() {
+          const rect = jCanvas.getBoundingClientRect();
+          const cssW = Math.max(300, rect.width || 620);
+          const cssH = Math.max(170, rect.height || 210);
+          const aspect = cssW / cssH;
+
+          // Keep 1:1 pixel aspect ratio so typography never stretches horizontally
+          const H = 720;
+          const W = Math.max(960, Math.round(H * aspect));
+          if (textCvs.width !== W || textCvs.height !== H) {
+            textCvs.width = W;
+            textCvs.height = H;
+          }
+
+          const effBoxHalfW = Math.min(boxHalfWMax, 0.5 * aspect - 0.075);
+          const effBoxHalfH = Math.min(boxHalfHMax, 0.305);
+          const effTabHalfH = Math.min(tabHalfHMax, 0.088);
+
+          const uvToPxX = (uvX) => (uvX / aspect + 0.5) * W;
+          const uvToPxY = (uvY) => (0.5 - uvY) * H;
+          const pxToUv = (px) => px / H;
+
+          const boxCenterY = -0.095;
+          const tabCenterY = boxCenterY + effBoxHalfH + effTabHalfH * 0.56;
+
+          // Editorial uppercase tracked title inside auto-sized top capsule
+          const displayTitle = curSpeaker.toUpperCase();
+          const maxTabHalfW = effBoxHalfW * 0.92;
+          let titleFontPx = Math.round(H * 0.056);
+          let titleTracking = Math.round(titleFontPx * 0.085);
+          tCtx.font = `600 ${titleFontPx}px "Syne", "Plus Jakarta Sans", sans-serif`;
+          let measuredTitleW = measureTrackedText(tCtx, displayTitle, titleTracking);
+          const maxAllowedTitlePx = (maxTabHalfW * 2 - 0.16) * H;
+
+          if (measuredTitleW > maxAllowedTitlePx && maxAllowedTitlePx > 120) {
+            const shrink = maxAllowedTitlePx / measuredTitleW;
+            titleFontPx = Math.max(24, Math.floor(titleFontPx * shrink));
+            titleTracking = Math.max(1, Math.round(titleFontPx * 0.07));
+            tCtx.font = `600 ${titleFontPx}px "Syne", "Plus Jakarta Sans", sans-serif`;
+            measuredTitleW = measureTrackedText(tCtx, displayTitle, titleTracking);
+          }
+
+          const effTabHalfW = Math.min(maxTabHalfW, Math.max(0.36, pxToUv(measuredTitleW) * 0.5 + 0.095));
+          const tabCenterX = -effBoxHalfW + effTabHalfW + 0.04;
+
+          targetBoxSize = [effBoxHalfW, effBoxHalfH];
+          targetTabSpec = [effTabHalfW, effTabHalfH, Math.min(tabRad, effTabHalfH * 0.94)];
+          if (!hasInitializedLayout) {
+            currentBoxSize = [...targetBoxSize];
+            currentTabSpec = [...targetTabSpec];
+            hasInitializedLayout = true;
+          }
+
+          // Narrative body area with balanced margins
+          const bodyLeftPx = uvToPxX(-effBoxHalfW + 0.115);
+          const bodyRightPx = uvToPxX(effBoxHalfW - 0.115);
+          const maxLineW = Math.max(240, bodyRightPx - bodyLeftPx);
+
+          const boxTopPx = uvToPxY(boxCenterY + effBoxHalfH - 0.062);
+          const boxBottomPx = uvToPxY(boxCenterY - effBoxHalfH + 0.062);
+          const availBodyH = Math.max(120, boxBottomPx - boxTopPx);
+
+          let baseFontPx = Math.round(H * 0.092);
+          let layoutBlocks = [];
+          let totalTextH = 0;
+
+          for (let attempt = 0; attempt < 8; attempt++) {
+            layoutBlocks = [];
+            totalTextH = 0;
+            const paraGap = Math.round(baseFontPx * 0.32);
+
+            for (let i = 0; i < curLines.length; i++) {
+              const rawLine = curLines[i];
+              const fontSize = Math.round(baseFontPx * 1.12);
+              const fontStr = `400 ${fontSize}px "Instrument Serif", Georgia, serif`;
+              const lineH = Math.round(fontSize * 1.28);
+
+              tCtx.font = fontStr;
+              const wrapped = wrapCanvasLines(tCtx, rawLine, maxLineW);
+              layoutBlocks.push({ fontStr, lineH, wrapped });
+              totalTextH += wrapped.length * lineH;
+              if (i < curLines.length - 1) totalTextH += paraGap;
+            }
+
+            if (totalTextH <= availBodyH || baseFontPx <= 32) break;
+            baseFontPx = Math.max(32, Math.floor(baseFontPx * 0.90));
+          }
+
+          // Encode R (title), G (body), and B (soft diffused shadow) into texture channels
+          tCtx.save();
+          tCtx.globalCompositeOperation = "source-over";
+          tCtx.fillStyle = "#000000";
+          tCtx.fillRect(0, 0, W, H);
+          tCtx.globalCompositeOperation = "lighter";
+
+          const tabLeftPx = uvToPxX(tabCenterX) - measuredTitleW * 0.5;
+          const tabMidPy = uvToPxY(tabCenterY + 0.002);
+          const titleFontStr = `600 ${titleFontPx}px "Syne", "Plus Jakarta Sans", sans-serif`;
+
+          // 1) Title shadow (B) + crisp title glyphs (R)
+          tCtx.font = titleFontStr;
+          tCtx.textAlign = "left";
+          tCtx.textBaseline = "middle";
+
+          tCtx.shadowColor = "rgb(0, 0, 255)";
+          tCtx.shadowBlur = 10;
+          tCtx.shadowOffsetX = 0;
+          tCtx.shadowOffsetY = 3;
+          tCtx.fillStyle = "rgb(0, 0, 255)";
+          fillTrackedText(tCtx, displayTitle, tabLeftPx, tabMidPy, titleTracking);
+
+          tCtx.shadowBlur = 0;
+          tCtx.shadowOffsetY = 0;
+          tCtx.fillStyle = "rgb(255, 0, 0)";
+          fillTrackedText(tCtx, displayTitle, tabLeftPx, tabMidPy, titleTracking);
+
+          // 2) Body shadow (B) + crisp body glyphs (G), vertically centered
+          const paraGap = Math.round(baseFontPx * 0.32);
+          const startY = boxTopPx + Math.max(0, (availBodyH - totalTextH) * 0.5);
+
+          tCtx.textAlign = "left";
+          tCtx.textBaseline = "top";
+
+          let curY = startY;
+          for (let b = 0; b < layoutBlocks.length; b++) {
+            const blk = layoutBlocks[b];
+            tCtx.font = blk.fontStr;
+
+            for (let w = 0; w < blk.wrapped.length; w++) {
+              const lineStr = blk.wrapped[w];
+              tCtx.shadowColor = "rgb(0, 0, 255)";
+              tCtx.shadowBlur = 10;
+              tCtx.shadowOffsetX = 0;
+              tCtx.shadowOffsetY = 3;
+              tCtx.fillStyle = "rgb(0, 0, 255)";
+              tCtx.fillText(lineStr, bodyLeftPx, curY);
+
+              tCtx.shadowBlur = 0;
+              tCtx.shadowOffsetY = 0;
+              tCtx.fillStyle = "rgb(0, 255, 0)";
+              tCtx.fillText(lineStr, bodyLeftPx, curY);
+              curY += blk.lineH;
+            }
+            curY += paraGap;
+          }
+          tCtx.restore();
+
+          jgl.bindTexture(jgl.TEXTURE_2D, textTex);
+          jgl.pixelStorei(jgl.UNPACK_FLIP_Y_WEBGL, false);
+          jgl.texImage2D(jgl.TEXTURE_2D, 0, jgl.RGBA, jgl.RGBA, jgl.UNSIGNED_BYTE, textCvs);
+        }
+
+        function resizeJelly() {
+          const rect = jCanvas.getBoundingClientRect();
+          const dpr = Math.min(window.devicePixelRatio || 1, 2.0);
+          const w = Math.max(320, Math.floor((rect.width || 620) * dpr));
+          const h = Math.max(160, Math.floor((rect.height || 210) * dpr));
+          if (jCanvas.width === w && jCanvas.height === h) return;
+
+          jCanvas.width = w;
+          jCanvas.height = h;
+          fbos.forEach((b) => {
+            jgl.bindTexture(jgl.TEXTURE_2D, b.tex);
+            jgl.texImage2D(jgl.TEXTURE_2D, 0, jgl.RGBA, w, h, 0, jgl.RGBA, jgl.UNSIGNED_BYTE, null);
+          });
+          updateTextTexture();
+        }
+
+        jCanvas.addEventListener("pointermove", (e) => {
+          const rect = jCanvas.getBoundingClientRect();
+          const dpr = jCanvas.width / Math.max(1, rect.width);
+          const nx = (e.clientX - rect.left) * dpr;
+          const ny = jCanvas.height - (e.clientY - rect.top) * dpr;
+          if (!pointerActive) {
+            prevMouse[0] = nx;
+            prevMouse[1] = ny;
+          }
+          mouse[0] = nx;
+          mouse[1] = ny;
+          pointerActive = true;
+          clearTimeout(moveTimeout);
+          moveTimeout = setTimeout(() => {
+            pointerActive = false;
+          }, 90);
+        });
+
+        jCanvas.addEventListener("pointerdown", (e) => {
+          const rect = jCanvas.getBoundingClientRect();
+          impulsePos = [
+            (e.clientX - rect.left) / Math.max(1, rect.width),
+            1.0 - (e.clientY - rect.top) / Math.max(1, rect.height)
+          ];
+          impulseStrength = 0.85;
+        });
+
+        resizeJelly();
+        updateTextTexture();
+        window.addEventListener("resize", resizeJelly);
+        if (document.fonts && document.fonts.ready) {
+          document.fonts.ready.then(updateTextTexture);
+        }
+
+        const uResA = jgl.getUniformLocation(progA, "iResolution");
+        const uMouseA = jgl.getUniformLocation(progA, "iMouse");
+        const uImpA = jgl.getUniformLocation(progA, "uImpulse");
+        const uImpPosA = jgl.getUniformLocation(progA, "uImpulsePos");
+        const uCh0A = jgl.getUniformLocation(progA, "iChannel0");
+
+        const uResI = jgl.getUniformLocation(progImg, "iResolution");
+        const uTimeI = jgl.getUniformLocation(progImg, "iTime");
+        const uMouseI = jgl.getUniformLocation(progImg, "iMouse");
+        const uBoxSizeI = jgl.getUniformLocation(progImg, "uBoxSize");
+        const uTabSpecI = jgl.getUniformLocation(progImg, "uTabSpec");
+        const uTextAlphaI = jgl.getUniformLocation(progImg, "uTextAlpha");
+        const uTextShiftI = jgl.getUniformLocation(progImg, "uTextShift");
+        const uCh0I = jgl.getUniformLocation(progImg, "iChannel0");
+        const uCh1I = jgl.getUniformLocation(progImg, "iChannel1");
+
+        return {
+          setContent(speaker, lines, immediate = false) {
+            const nextLines = Array.isArray(lines) ? lines : [String(lines)];
+            const sameAsCurrent =
+              speaker === curSpeaker && nextLines.join("\n") === curLines.join("\n");
+
+            if (immediate) {
+              curSpeaker = speaker;
+              curLines = nextLines;
+              pendingContent = null;
+              transPhase = "idle";
+              transAlpha = 1.0;
+              resizeJelly();
+              updateTextTexture();
+              currentBoxSize = [...targetBoxSize];
+              currentTabSpec = [...targetTabSpec];
+              return;
+            }
+
+            if (sameAsCurrent && !pendingContent) return;
+
+            pendingContent = { speaker, lines: nextLines };
+            if (transPhase !== "out") {
+              transPhase = "out";
+            }
+          },
+          triggerPulse(strength = 0.72) {
+            impulsePos = [0.25 + Math.random() * 0.5, 0.4 + Math.random() * 0.25];
+            impulseStrength = strength;
+          },
+          resize: resizeJelly,
+          render(timeSec) {
+            resizeJelly();
+            const dt =
+              lastRenderTime === null
+                ? 0.016
+                : Math.min(0.05, Math.max(0.001, timeSec - lastRenderTime));
+            lastRenderTime = timeSec;
+
+            // Smooth cross-dissolve for chapter text transitions (no abrupt hard cut)
+            if (transPhase === "out") {
+              transAlpha = Math.max(0.0, transAlpha - dt / 0.62);
+              if (transAlpha <= 0.001) {
+                transAlpha = 0.0;
+                if (pendingContent) {
+                  curSpeaker = pendingContent.speaker;
+                  curLines = pendingContent.lines;
+                  pendingContent = null;
+                  updateTextTexture();
+                  impulsePos = [0.35 + Math.random() * 0.30, 0.48 + Math.random() * 0.14];
+                  impulseStrength = 0.30;
+                }
+                transPhase = "in";
+              }
+            } else if (transPhase === "in") {
+              transAlpha = Math.min(1.0, transAlpha + dt / 0.85);
+              if (transAlpha >= 0.999) {
+                transAlpha = 1.0;
+                transPhase = "idle";
+              }
+            }
+
+            // Smoothly glide capsule tab width and box dimensions instead of snapping
+            const geomDamp = 1.0 - Math.exp(-5.8 * dt);
+            currentBoxSize[0] += (targetBoxSize[0] - currentBoxSize[0]) * geomDamp;
+            currentBoxSize[1] += (targetBoxSize[1] - currentBoxSize[1]) * geomDamp;
+            currentTabSpec[0] += (targetTabSpec[0] - currentTabSpec[0]) * geomDamp;
+            currentTabSpec[1] += (targetTabSpec[1] - currentTabSpec[1]) * geomDamp;
+            currentTabSpec[2] += (targetTabSpec[2] - currentTabSpec[2]) * geomDamp;
+
+            const easedAlpha = transAlpha * transAlpha * (3.0 - 2.0 * transAlpha);
+            const textShift =
+              transPhase === "out"
+                ? (1.0 - easedAlpha) * 0.011
+                : transPhase === "in"
+                  ? -(1.0 - easedAlpha) * 0.013
+                  : 0.0;
+
+            const mVec = [
+              mouse[0],
+              mouse[1],
+              pointerActive ? prevMouse[0] : -1.0,
+              pointerActive ? prevMouse[1] : -1.0
+            ];
+            prevMouse[0] = mouse[0];
+            prevMouse[1] = mouse[1];
+
+            jgl.bindFramebuffer(jgl.FRAMEBUFFER, fbos[1 - fboIdx].fbo);
+            jgl.viewport(0, 0, jCanvas.width, jCanvas.height);
+            jgl.disable(jgl.BLEND);
+            jgl.useProgram(progA);
+            jgl.bindBuffer(jgl.ARRAY_BUFFER, quad);
+            jgl.enableVertexAttribArray(0);
+            jgl.vertexAttribPointer(0, 2, jgl.FLOAT, false, 0, 0);
+            jgl.uniform2f(uResA, jCanvas.width, jCanvas.height);
+            jgl.uniform4fv(uMouseA, mVec);
+            jgl.uniform1f(uImpA, impulseStrength);
+            jgl.uniform2f(uImpPosA, impulsePos[0], impulsePos[1]);
+            jgl.activeTexture(jgl.TEXTURE0);
+            jgl.bindTexture(jgl.TEXTURE_2D, fbos[fboIdx].tex);
+            jgl.uniform1i(uCh0A, 0);
+            jgl.drawArrays(jgl.TRIANGLE_STRIP, 0, 4);
+
+            impulseStrength *= 0.86;
+
+            jgl.bindFramebuffer(jgl.FRAMEBUFFER, null);
+            jgl.viewport(0, 0, jCanvas.width, jCanvas.height);
+            jgl.enable(jgl.BLEND);
+            jgl.blendFunc(jgl.SRC_ALPHA, jgl.ONE_MINUS_SRC_ALPHA);
+            jgl.clearColor(0, 0, 0, 0);
+            jgl.clear(jgl.COLOR_BUFFER_BIT);
+
+            jgl.useProgram(progImg);
+            jgl.bindBuffer(jgl.ARRAY_BUFFER, quad);
+            jgl.enableVertexAttribArray(0);
+            jgl.vertexAttribPointer(0, 2, jgl.FLOAT, false, 0, 0);
+            jgl.uniform2f(uResI, jCanvas.width, jCanvas.height);
+            jgl.uniform1f(uTimeI, timeSec);
+            jgl.uniform4fv(uMouseI, mVec);
+            jgl.uniform2f(uBoxSizeI, currentBoxSize[0], currentBoxSize[1]);
+            jgl.uniform3f(uTabSpecI, currentTabSpec[0], currentTabSpec[1], currentTabSpec[2]);
+            jgl.uniform1f(uTextAlphaI, easedAlpha);
+            jgl.uniform1f(uTextShiftI, textShift);
+
+            jgl.activeTexture(jgl.TEXTURE0);
+            jgl.bindTexture(jgl.TEXTURE_2D, textTex);
+            jgl.uniform1i(uCh0I, 0);
+
+            jgl.activeTexture(jgl.TEXTURE1);
+            jgl.bindTexture(jgl.TEXTURE_2D, fbos[1 - fboIdx].tex);
+            jgl.uniform1i(uCh1I, 1);
+
+            jgl.drawArrays(jgl.TRIANGLE_STRIP, 0, 4);
+            fboIdx = 1 - fboIdx;
+          }
+        };
+      }
+
+      // ==================== 2. WebGL2 Fountain & Duckweed Engine ====================
+      function initLavenderCourtSubpage(jellyBox) {
+        const container = document.getElementById("lcStageContainer");
+        const backCanvas = document.getElementById("lcRainCanvas");
+        const lcGlCanvas = document.getElementById("lcGlCanvas");
+        const frontCanvas = document.getElementById("lcFrontCanvas");
+        if (!container || !backCanvas || !lcGlCanvas || !frontCanvas) return null;
+
+        let lcGl = null;
+        try {
+          lcGl = lcGlCanvas.getContext("webgl2", {
+            alpha: true,
+            antialias: true,
+            premultipliedAlpha: false
+          });
+        } catch (err) {
+          console.error("Failed to initialize Fountain WebGL2 context:", err);
+          return null;
+        }
+        if (!lcGl) return null;
+
+        lcGl.getExtension("EXT_color_buffer_float");
+        lcGl.enable(lcGl.BLEND);
+        lcGl.blendFunc(lcGl.SRC_ALPHA, lcGl.ONE_MINUS_SRC_ALPHA);
+
+        const TAU = Math.PI * 2;
+        const GRAVITY = 9.81;
+        const POOL_R = 2.12, POOL_Y = 0.325;
+        const LOWER_R = 1.15, LOWER_Y = 1.19, LOWER_W = 1.147;
+        const UPPER_R = 0.66, UPPER_Y = 2.03, UPPER_W = 1.991;
+        const NOZZLE_Y = 2.285;
+        const WAVE_DOMAIN = 2.20;
+        const SPILLS = 12;
+
+        function hash11JS(x) {
+          x = (x * 0.1031) % 1;
+          if (x < 0) x += 1;
+          x *= x + 33.33;
+          x *= x + x;
+          return x - Math.floor(x);
+        }
+
+        const tierSpillImpacts = [[], [], []];
+        for (let tier = 0; tier < 3; tier++) {
+          const count = tier === 0 ? SPILLS : tier === 1 ? 8 : 7;
+          for (let k = 0; k < count; k++) {
+            const s = hash11JS(k + 15.0 + 31.0 * tier);
+            const ang = (TAU * (k + 0.21 + tier * 0.18)) / count;
+            const r0 = tier === 0 ? LOWER_R + 0.030 : tier === 1 ? UPPER_R + 0.022 : 0.034;
+            const y0 = tier === 0 ? LOWER_Y + 0.016 : tier === 1 ? UPPER_Y + 0.010 : NOZZLE_Y;
+            const vr = tier === 0 ? 0.60 + 0.23 * s : tier === 1 ? 0.38 + 0.08 * s : 0.40 + 0.17 * s;
+            const vy = tier === 0 ? 0.12 : tier === 1 ? 0.095 : 2.43 + 0.62 * s;
+            const endY = tier === 0 ? POOL_Y : tier === 1 ? LOWER_W : UPPER_W;
+            const flight = (vy + Math.sqrt(vy * vy + 2.0 * GRAVITY * (y0 - endY))) / GRAVITY;
+            const period = Math.max(flight + 0.024, 0.46 + 0.22 * s);
+            const offset = hash11JS(k + 4.0 + 51.0 * tier) * 0.7;
+            const hitR = r0 + vr * flight;
+            tierSpillImpacts[tier].push({
+              x: Math.cos(ang) * hitR,
+              z: Math.sin(ang) * hitR,
+              flight,
+              period,
+              offset
+            });
+          }
+        }
+
+        const vertexShaderSource = `#version 300 es
+          in vec2 aPosition;
+          void main() {
+            gl_Position = vec4(aPosition, 0.0, 1.0);
+          }
+        `;
+
+        const commonGLSL = `
+          const float TAU=6.28318530718;
+          const float GRAVITY=9.81;
+          const float POOL_R=2.12, POOL_Y=.325;
+          const float LOWER_R=1.15, LOWER_Y=1.19, LOWER_W=1.147;
+          const float UPPER_R=.66, UPPER_Y=2.03, UPPER_W=1.991;
+          const float NOZZLE_Y=2.285;
+          const float WAVE_DOMAIN=2.20;
+          const int SPILLS=12;
+
+          float sat(float v){return clamp(v,0.,1.);}
+          float sq(float v){return v*v;}
+          vec2 circleDir(float a){return vec2(cos(a),sin(a));}
+          vec2 rotateXZ(vec2 p,float a){vec2 d=circleDir(a);return mat2(d.x,d.y,-d.y,d.x)*p;}
+          float hash11(float x){
+            x=fract(x*.1031);x*=x+33.33;x*=x+x;return fract(x);
+          }
+          float hash21(vec2 p){
+            vec3 q=fract(vec3(p.xyx)*vec3(.1031,.11369,.13787));
+            q+=dot(q,q.yzx+19.19);return fract((q.x+q.y)*q.z);
+          }
+          float noise2(vec2 p){
+            vec2 b=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+            return mix(mix(hash21(b),hash21(b+vec2(1,0)),f.x),
+                       mix(hash21(b+vec2(0,1)),hash21(b+1.),f.x),f.y);
+          }
+          float fbm(vec2 p){
+            float a=0.,w=.54;
+            for(int i=0;i<4;i++){a+=w*noise2(p);p=mat2(1.62,1.25,-1.25,1.62)*p+9.2;w*=.49;}
+            return a;
+          }
+          float landTime(float y0,float vy,float y1){
+            return (vy+sqrt(vy*vy+2.*GRAVITY*(y0-y1)))/GRAVITY;
+          }
+          struct Jet {vec3 p;vec3 v;float flight;float period;float offset;};
+          Jet getJet(int tier,int k){
+            float i=float(k),s=hash11(i+15.+31.*float(tier));
+            float count=tier==0?float(SPILLS):(tier==1?8.:7.);
+            vec2 axis=circleDir(TAU*(i+.21+float(tier)*.18)/count);
+            float r=tier==0?LOWER_R+.030:(tier==1?UPPER_R+.022:.034);
+            float y=tier==0?LOWER_Y+.016:(tier==1?UPPER_Y+.010:NOZZLE_Y);
+            float vr=tier==0?mix(.60,.83,s):(tier==1?mix(.38,.46,s):mix(.40,.57,s));
+            float vy=tier==0?.12:(tier==1?.095:mix(2.43,3.05,s));
+            float endY=tier==0?POOL_Y:(tier==1?LOWER_W:UPPER_W);
+            float flight=landTime(y,vy,endY);
+            return Jet(vec3(axis.x*r,y,axis.y*r),vec3(axis.x*vr,vy,axis.y*vr),
+                       flight,max(flight+.024,mix(.46,.68,s)),hash11(i+4.+51.*float(tier))*.7);
+          }
+          vec3 jetPos(Jet j,float t){return j.p+j.v*t-vec3(0,.5*GRAVITY*t*t,0);}
+          float impactAge(Jet j,float t){return mod(t+j.offset-j.flight,j.period);}
+          int waveSize(vec2 size){return min(192,int(min(size.x,size.y)));}
+        `;
+
+        const bufferAFragmentSource = `#version 300 es
+          precision highp float;
+          precision highp int;
+          precision highp sampler2D;
+
+          uniform vec3 iResolution;
+          uniform float iTime;
+          uniform float iTimeDelta;
+          uniform int iFrame;
+          uniform sampler2D iChannel0;
+
+          out vec4 fragColor;
+
+          ${commonGLSL}
+
+          vec2 waveWorld(ivec2 id,int n){
+            return ((vec2(id)+.5)/float(n)*2.-1.)*WAVE_DOMAIN;
+          }
+          vec2 neighbor(ivec2 at,int n,vec2 here){
+            if(any(lessThan(at,ivec2(0))) || any(greaterThanEqual(at,ivec2(n))) ||
+               length(waveWorld(at,n))>POOL_R) return here;
+            return texelFetch(iChannel0,at,0).rg;
+          }
+          void main(){
+            ivec2 id=ivec2(gl_FragCoord.xy);
+            int n=waveSize(iResolution.xy);
+            fragColor=vec4(0);
+            if(any(greaterThanEqual(id,ivec2(n))) || n<16 || iFrame==0) return;
+            vec2 p=waveWorld(id,n);
+            float r=length(p);
+            if(r>POOL_R) return;
+            vec2 old=texelFetch(iChannel0,id,0).rg;
+
+            // 9-point isotropic stencil eliminates square-grid polka-dot anisotropy
+            vec2 card = neighbor(id+ivec2(1,0),n,old) + neighbor(id-ivec2(1,0),n,old)
+                      + neighbor(id+ivec2(0,1),n,old) + neighbor(id-ivec2(0,1),n,old);
+            vec2 diag = neighbor(id+ivec2(1,1),n,old) + neighbor(id-ivec2(1,1),n,old)
+                      + neighbor(id+ivec2(1,-1),n,old) + neighbor(id-ivec2(1,-1),n,old);
+            vec2 avg = 0.2 * card + 0.05 * diag;
+            float lap = 4.0 * (avg.r - old.r);
+
+            // Kelvin-Voigt velocity viscosity kills 2-texel checkerboard ringing while keeping smooth ripples
+            float vel = old.r - old.g;
+            float avgVel = avg.r - avg.g;
+            float smoothVel = mix(vel, avgVel, 0.08);
+
+            float dt=clamp(iTimeDelta,.001,.033);
+            float kick=0.;
+            if(r>1.20 && r<1.80){
+              for(int k=0;k<SPILLS;k++){
+                Jet j=getJet(0,k);
+                if(impactAge(j,iTime)<dt){
+                  vec2 d=p-jetPos(j,j.flight).xz;
+                  kick+=.062*exp(-dot(d,d)/.0085);
+                }
+              }
+            }
+            float damping=mix(.988,.915,smoothstep(1.94,POOL_R,r));
+            float speed=sq(min(.45,1.38*dt*float(n)/(2.*WAVE_DOMAIN)));
+            float h=(old.r + smoothVel*damping + speed*lap + kick)*.997;
+            fragColor=vec4(clamp(h,-.28,.28),old.r,0,1);
+          }
+        `;
+
+        const imageFragmentSource = `#version 300 es
+          precision highp float;
+          precision highp int;
+          precision highp sampler2D;
+
+          uniform vec3 iResolution;
+          uniform float iTime;
+          uniform float uSimTime;
+          uniform vec2 uCameraAngles;
+          uniform vec3 uLookAt;
+          uniform sampler2D iChannel0;
+          uniform sampler2D uDuckweedTex;
+          uniform vec4 uLilyPads[12];
+
+          uniform float uCameraDist;
+          uniform float uFocal;
+          uniform vec2 uStageOffset;
+          uniform float uGrassRadius;
+          uniform float uLavenderTint;
+          uniform float uSurgeGlow;
+
+          out vec4 fragColor;
+
+          ${commonGLSL}
+
+          #define QUALITY 1
+          const vec3 SUN=vec3(-.7854,.5841,-.2042);
+          const float FAR=55.;
+          const vec3 WHITE=vec3(.76,.63,.49);
+
+          float max3(vec3 p){return max(p.x,max(p.y,p.z));}
+          float box2(vec2 p,vec2 b){
+            vec2 d=abs(p)-b;return length(max(d,0.))+min(max(d.x,d.y),0.);
+          }
+          float oval(vec3 p,vec3 b){
+            return (length(p/b)-1.)*min(b.x,min(b.y,b.z));
+          }
+          float bead(vec2 ry,float r,float y,float w){return length(ry-vec2(r,y))-w;}
+          float drum(vec2 ry,float y,float r,float h){return box2(vec2(ry.x,ry.y-y),vec2(r,h));}
+          void pick(inout vec2 d,float v,float m){if(v<d.x)d=vec2(v,m);}
+
+          // Abyssal bioluminescent teal nebula, stardust, translucent sapphire face-orbs & neon emerald/cobalt runes
+          float runeHash(vec2 p) {
+            return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+          }
+
+          float runeLine(vec2 p, vec2 a, vec2 b, float w, float aa) {
+            vec2 pa = p - a, ba = b - a;
+            float ba2 = dot(ba, ba);
+            if (ba2 < 1e-4) return 0.0;
+            float h = clamp(dot(pa, ba) / ba2, 0.0, 1.0);
+            return smoothstep(w + aa, max(0.0, w - aa), length(pa - ba * h));
+          }
+
+          // Crisp 5-segment angular intersecting runes matching the reference aesthetic
+          vec2 drawRune(vec2 uv, vec2 id, float aa) {
+            float core = 0.0;
+            float glow = 0.0;
+            for (float i = 0.0; i < 5.0; i++) {
+              vec2 p1 = vec2(runeHash(id + i), runeHash(id + i + 1.2)) * 0.52 - 0.26;
+              vec2 p2 = vec2(runeHash(id + i + 2.4), runeHash(id + i + 3.6)) * 0.52 - 0.26;
+              core = max(core, runeLine(uv, p1, p2, 0.0085, aa));
+              glow = max(glow, runeLine(uv, p1, p2, 0.022, aa * 2.0));
+            }
+            return vec2(core, glow);
+          }
+
+          // Translucent sapphire/cobalt orb disc + crisp circular eyes & gradient-normalized smile arc
+          vec2 drawFaceOrb(vec2 p, vec2 id, float aa) {
+            float n = runeHash(id);
+            float lenP = length(p);
+
+            // Crisp translucent circular disc (overlapping bokeh-like spheres across depth layers)
+            float rad = 0.30 + 0.10 * runeHash(id + 3.7);
+            float disc = smoothstep(rad + aa, max(0.0, rad - aa), lenP);
+            float rim = smoothstep(rad * 0.68, rad, lenP) * disc;
+
+            // 1. Two distinct bright circular eyes
+            float eyeDist = 0.11 + n * 0.055;
+            float eyeSize = 0.028 + runeHash(id + 1.0) * 0.024;
+            vec2 eyePos = vec2(abs(p.x) - eyeDist, p.y - 0.075);
+            float eyes = smoothstep(eyeSize + aa, max(0.0, eyeSize - aa), length(eyePos));
+
+            // 2. Expressive curved mouth arc with Euclidean distance correction
+            float mouthType = sin(iTime * 1.05 + n * 20.0);
+            float k = 1.8 + mouthType * 2.1;
+            float dy = (p.y + 0.105) + (p.x * p.x) * k;
+            float grad = sqrt(1.0 + sq(2.0 * k * p.x));
+            float mouthDist = abs(dy) / grad;
+            float mouth = smoothstep(0.011 + aa, max(0.0, 0.011 - aa), mouthDist)
+                        * smoothstep(0.21, 0.15, abs(p.x));
+
+            float features = clamp(max(eyes, mouth), 0.0, 1.0) * disc;
+            return vec2(disc * (0.28 + 0.14 * rim), features);
+          }
+
+          // Fine sparkling bioluminescent stardust particles (world-space jittered grid with analytical AA)
+          float starDustLayer(vec2 pos, float scale, float worldPx, float seed) {
+            vec2 gv = pos * scale;
+            vec2 id = floor(gv);
+            vec2 f = fract(gv) - 0.5;
+            float n = runeHash(id + seed);
+            vec2 offs = vec2(runeHash(id + seed + 17.3), runeHash(id + seed + 41.9)) - 0.5;
+            offs *= 0.76;
+            float d = length(f - offs);
+            float r = mix(0.024, 0.088, pow(n, 2.8));
+            float pxCell = max(0.016, worldPx * scale * 1.12);
+            float speck = smoothstep(r + pxCell, max(0.0, r - pxCell * 0.45), d);
+            float fade = 1.0 - smoothstep(0.24, 0.55, pxCell);
+            float twinkle = 0.55 + 0.45 * sin(iTime * (0.9 + n * 1.9) + n * 31.0);
+            return speck * fade * twinkle * step(0.28, n);
+          }
+
+          vec3 evalShadertoyWater(vec2 worldXZ, vec2 refrOffset, float tier, float hitDist, float grazing) {
+            float tierR = tier < 0.5 ? POOL_R : (tier < 1.5 ? LOWER_R : UPPER_R);
+            float invScale = 1.0 / (tierR * 1.95);
+
+            // Normalized basin UV for the global nebula bloom; true world units for fine, close-up-friendly motifs
+            vec2 baseUV = worldXZ * invScale;
+            vec2 uvNeb = (worldXZ + refrOffset * 0.85) * invScale;
+            vec2 wNeb = worldXZ + refrOffset * 0.85;
+
+            // Analytical perspective pixel footprint in world units (artifact-free across basin edges)
+            float worldPx = (2.0 * hitDist) / (uFocal * min(iResolution.x, iResolution.y) * max(0.32, grazing));
+
+            // Soft vignette near stone rim so motifs fade naturally into the basin wall
+            float radialFade = 1.0 - smoothstep(0.43, 0.52, length(baseUV));
+
+            // --- Layer 1: Deep abyssal dark emerald-obsidian void & glowing teal-cyan cosmic nebula ---
+            vec3 nebula = vec3(0.004, 0.014, 0.024);
+
+            // Off-center drifting turquoise-cyan radiant bloom (like the luminous upper-left nebula core in reference)
+            float driftA = iTime * 0.07;
+            vec2 glowCenter = vec2(cos(driftA), sin(driftA)) * 0.24;
+            float distGlow = length(uvNeb - glowCenter);
+            float nebulaMist = fbm(uvNeb * 3.8 + vec2(iTime * 0.035, -iTime * 0.025));
+            float nebulaFine = fbm(uvNeb * 9.5 - vec2(iTime * 0.05, iTime * 0.04));
+            float coreGlow = exp(-distGlow * 3.2) * (0.68 + 0.58 * nebulaMist);
+            nebula += vec3(0.015, 0.34, 0.42) * coreGlow;
+            nebula += vec3(0.04, 0.62, 0.68) * exp(-distGlow * 6.5) * (0.55 + 0.50 * nebulaFine);
+
+            // Subtle deep Kali fractal gas veins for organic volumetric depth
+            vec3 gasAcc = vec3(0.0);
+            for (float l = 1.0; l <= 2.0; l++) {
+              float t = iTime * (0.010 + l * 0.022);
+              float angle = t * 0.20 * (mod(l, 2.0) == 0.0 ? 1.0 : -1.0);
+              mat2 rot = mat2(cos(angle), sin(angle), -sin(angle), cos(angle));
+              vec2 luv = (uvNeb - glowCenter * 0.45) * rot * (0.95 + l * 0.28);
+
+              float vTeal = 0.0, vCobalt = 0.0;
+              float s = 0.16;
+              for (int i = 0; i < 16; i++) {
+                vec3 p = s * normalize(vec3(luv, 0.26));
+                p.xy *= 1.0 + clamp(dot(p.xy, p.xy), 0.0, 0.65) * 0.9;
+                p += vec3(0.22 + l * 0.11, 0.28, s - 1.92 - sin(t * 0.45) * 0.10);
+
+                for (int j = 0; j < 7; j++) {
+                  float d2 = max(dot(p, p), 0.30);
+                  p = abs(p) / d2 - 0.645;
+                }
+
+                float e = min(dot(p, p), 2.1);
+                vTeal += e * 0.016;
+                vCobalt += min(length(p.xy), 1.6) * 0.019;
+                s += 0.135;
+              }
+              float len = length(luv);
+              vTeal *= smoothstep(0.82, 0.0, len);
+              vCobalt *= smoothstep(0.95, 0.0, len);
+              gasAcc += vec3(vTeal * 0.06, vTeal * 0.44 + vCobalt * 0.14, vTeal * 0.56 + vCobalt * 0.48) / l;
+            }
+            nebula += tanh(gasAcc * 0.95) * (0.55 + 0.60 * nebulaMist);
+
+            // --- Layer 2: Multi-scale bioluminescent stardust speckles suspended through the water ---
+            float dustNear = starDustLayer(wNeb + vec2(iTime * 0.025, -iTime * 0.016), 5.6, worldPx, 11.3);
+            float dustMid  = starDustLayer(wNeb * 1.12 - vec2(iTime * 0.018, iTime * 0.020), 10.8, worldPx, 37.9);
+            float dustDeep = starDustLayer(wNeb * 1.25 + vec2(-iTime * 0.010, iTime * 0.014), 18.5, worldPx, 73.1);
+            float dustDensity = 0.32 + 0.95 * coreGlow + 0.55 * nebulaFine;
+            vec3 stardust = vec3(0.28, 0.92, 0.96) * dustNear * 0.66
+                          + vec3(0.14, 0.76, 0.92) * dustMid  * 0.56
+                          + vec3(0.16, 0.44, 0.98) * dustDeep * 0.46;
+            nebula += stardust * dustDensity;
+
+            // --- Layer 3: Four depth-parallax layers of translucent sapphire/cobalt face orbs (refined world scale) ---
+            vec3 orbsCol = vec3(0.0);
+            for (float l = 1.0; l <= 4.0; l++) {
+              // Smaller, balanced physical orb sizes so telephoto close-ups frame multiple orbs comfortably
+              float gridScale = 1.08 * l;
+              float depthRefr = 0.30 + 0.16 * l;
+              vec2 lPos = worldXZ + refrOffset * depthRefr;
+              float t = iTime * (0.075 / l);
+              vec2 fuv = lPos * gridScale + vec2(t, cos(t * 0.4) * 0.45) + vec2(l * 2.13, -l * 1.47);
+              vec2 id = floor(fuv);
+              vec2 f = fract(fuv) - 0.5;
+
+              float r = iTime * (runeHash(id) - 0.5) * 0.48 + runeHash(id + 9.2) * TAU;
+              mat2 rot = mat2(cos(r), sin(r), -sin(r), cos(r));
+
+              float aa = clamp(worldPx * gridScale * 1.25, 0.006, 0.09);
+              float lodFade = 1.0 - smoothstep(0.055, 0.09, aa);
+              vec2 orb = drawFaceOrb(f * rot, id, aa) * lodFade;
+
+              float huePick = runeHash(id + 5.4);
+              // Cohesive royal cobalt -> deep sapphire -> luminous cyan-teal orb palette
+              vec3 discCol = mix(vec3(0.05, 0.13, 0.58), vec3(0.05, 0.34, 0.66), huePick);
+              vec3 featCol = mix(vec3(0.14, 0.36, 1.00), vec3(0.16, 0.78, 0.95), huePick);
+              float presence = mix(0.42, 1.0, smoothstep(0.05, 0.85, sin(iTime * 0.55 + runeHash(id) * TAU) * 0.5 + 0.5));
+              float depthFade = 1.0 / (0.76 + 0.36 * l);
+
+              // Extra fine stardust glinting inside each translucent orb
+              float orbDust = starDustLayer(lPos + vec2(l * 0.3), 7.5 + l * 3.0, worldPx, 91.0 + l * 13.0);
+              orbsCol += (discCol * orb.x + featCol * orb.y * 0.86 + vec3(0.20, 0.65, 1.0) * orbDust * orb.x * 1.35)
+                       * presence * depthFade;
+            }
+
+            // --- Layer 4: Delicate 5-segment angular stroke runes scaled cleanly for both wide & close-up views ---
+            vec3 runesCol = vec3(0.0);
+            for (float l = 1.0; l <= 2.0; l++) {
+              float gridScale = l < 1.5 ? 2.25 : 3.65;
+              vec2 rPos = worldXZ + refrOffset * (0.36 + 0.16 * l);
+              float t = iTime * (0.028 / l);
+              vec2 ruv = rPos * gridScale + vec2(t + l * 1.7, sin(t * 0.5) * 0.45);
+              vec2 id = floor(ruv);
+              vec2 f = fract(ruv) - 0.5;
+
+              // Leave generous dark nebula breathing room between runes (~68% cell occupancy)
+              float occupied = step(0.32, runeHash(id + 33.1 + l * 7.0));
+              float aa = clamp(worldPx * gridScale * 1.25, 0.005, 0.085);
+              float lodFade = 1.0 - smoothstep(0.05, 0.085, aa);
+              float blink = mix(0.30, 1.0, smoothstep(0.15, 0.85, sin(iTime * 0.62 + runeHash(id) * TAU) * 0.5 + 0.5));
+              vec2 rune = drawRune(f, id, aa) * blink * lodFade * occupied;
+
+              // Predominantly vivid emerald / acid-green runes with occasional electric cobalt runes
+              float isBlue = step(0.68, runeHash(id + 14.2));
+              vec3 greenCore = vec3(0.12, 0.96, 0.38);
+              vec3 blueCore  = vec3(0.10, 0.38, 1.00);
+              vec3 rCore = mix(greenCore, blueCore, isBlue);
+              vec3 rGlow = mix(vec3(0.04, 0.52, 0.20), vec3(0.04, 0.18, 0.72), isBlue);
+              float layerW = l < 1.5 ? 0.88 : 0.55;
+              runesCol += (rCore * rune.x + rGlow * rune.y * 0.48) * layerW;
+            }
+
+            vec3 srgb = nebula + (orbsCol + runesCol) * radialFade;
+            srgb = tanh(srgb * 1.18);
+
+            // Subtle chromatic shimmer across refracted ripples
+            float ab = 0.004 * length(uvNeb) + 0.045 * length(refrOffset);
+            srgb.g = tanh(srgb.g + ab * 0.75);
+            srgb.b = tanh(srgb.b + ab * 1.15);
+
+            // Convert display-tuned cosmic palette to linear space so deep obsidian blacks stay rich after tonemapping
+            return pow(clamp(srgb, 0.0, 1.0), vec3(2.2)) * 1.38;
+          }
+
+          float shell(vec2 ry,float a,float R,float lip,float n){
+            float f=cos(a*n),g=cos(a*n*2.);
+            float rr=R+.029*f;
+            float x=min(1.13,ry.x/rr);
+            float bowl=lip-R*(.19*(1.-x*x*x*x))+.022*f*x*x;
+            float d=max((abs(ry.y-bowl+.029)-.041)*.68,ry.x-rr);
+            return min(d,bead(ry,rr-.013,lip-.018+.018*f,.035+.004*g));
+          }
+
+          float fountain(vec3 p,vec2 ry,float a){
+            float y=p.y,r=ry.x;
+            float base=min(drum(ry,.367,.405,.060),drum(ry,.454,.313,.058));
+            base=min(base,bead(ry,.30,.486,.039));
+            float flutes=.010*cos(a*12.)*smoothstep(.49,.60,y)*(1.-smoothstep(.83,.94,y));
+            float radius=.143+.105*exp(-sq((y-.55)/.15))+.052*exp(-sq((y-.94)/.105))+flutes;
+            float stem=max((r-radius)*.73,max(.45-y,y-1.035));
+            base=min(base,min(stem,bead(ry,.185,.925,.028)));
+            float neck=.085+.059*exp(-sq((y-1.23)/.085))+.055*exp(-sq((y-1.82)/.12));
+            base=min(base,max((r-neck)*.72,max(1.04-y,y-1.947)));
+            base=min(base,min(bead(ry,.127,1.33,.025),bead(ry,.109,1.68,.024)));
+            base=min(base,drum(ry,2.094,.083,.139));
+            base=min(base,min(bead(ry,.114,2.071,.024),bead(ry,.081,2.198,.030)));
+            base=min(base,oval(p-vec3(0,2.232,0),vec3(.069,.053,.069)));
+            if(r<LOWER_R+.35 && abs(y-LOWER_Y)<.55)base=min(base,shell(ry,a,LOWER_R,LOWER_Y,16.));
+            else base=min(base,max(r-LOWER_R-.05,abs(y-LOWER_Y)-.31));
+            if(r<UPPER_R+.25 && abs(y-UPPER_Y)<.45)base=min(base,shell(ry,a,UPPER_R,UPPER_Y,13.));
+            else base=min(base,max(r-UPPER_R-.05,abs(y-UPPER_Y)-.20));
+            return base;
+          }
+
+          vec2 mapScene(vec3 p){
+            float r=length(p.xz);
+            float a=atan(p.z,p.x+1e-7);
+            vec2 ry=vec2(r,p.y),d=vec2(FAR,0.);
+
+            float rim=min(bead(ry,2.177,.383,.076),bead(ry,2.208,.137,.046));
+            rim=min(rim,box2(ry-vec2(2.174,.232),vec2(.095,.13)));
+            pick(d,rim,2.);
+
+            if(r<1.66 && p.y<2.75)pick(d,fountain(p,ry,a),1.);
+            else pick(d,max(r-1.23,p.y-2.30),0.);
+
+            return d;
+          }
+
+          vec2 trace(vec3 ro,vec3 rd,float limit){
+            float t=.025;
+            for(int i=0;i<142;i++){
+              if(t>=limit)break;
+              vec2 h=mapScene(ro+rd*t);
+              float e=.00063+.00012*t;
+              if(h.x<e && h.y>0.)return vec2(t,h.y);
+              t+=max(h.x*.90,.008);
+            }
+            return vec2(limit,0.);
+          }
+
+          vec3 normalAt(vec3 p,float t){
+            vec2 e=vec2(1,-1)*(.00135+.000085*t);
+            return normalize(e.xyy*mapScene(p+e.xyy).x+e.yyx*mapScene(p+e.yyx).x+
+                             e.yxy*mapScene(p+e.yxy).x+e.xxx*mapScene(p+e.xxx).x);
+          }
+
+          float shadowAt(vec3 p,vec3 n){
+            float s=1.,t=.034;
+            vec3 start=p+.007*n;
+            for(int i=0;i<(QUALITY==1?33:21);i++){
+              vec2 h=mapScene(start+SUN*t);
+              if(h.y>0.)s=min(s,12.*h.x/t);
+              if(s<.045 || t>6.4)break;
+              t+=clamp(h.x,.022,.52);
+            }
+            return sat(s);
+          }
+
+          vec3 environment(vec3 d){
+            float y=max(0.,d.y),sun=max(0.,dot(d,SUN));
+            vec3 crystalSky=mix(vec3(.68,.78,.96),vec3(.34,.56,.88),smoothstep(0.,.87,y));
+            vec3 dreamySky=mix(vec3(.78,.74,.97),vec3(.48,.62,.92),smoothstep(0.,.87,y));
+            vec3 c=mix(crystalSky,dreamySky,uLavenderTint);
+            vec2 uv=d.xz/(.29+abs(d.y));
+            float veil=smoothstep(.48,.74,fbm(uv*2.1+vec2(iTime*.012,0.)));
+            c=mix(c,mix(vec3(.88,.94,1.0),vec3(.93,.89,1.0),uLavenderTint),.37*veil*smoothstep(0.,.38,y));
+            c+=mix(vec3(.75,.90,1.0),vec3(.90,.78,1.0),uLavenderTint)*(.30*pow(sun,10.)+1.2*pow(sun,125.));
+            return c;
+          }
+
+          vec3 groundColor(vec3 p,float t,out vec3 n){
+            float f=fbm(p.xz*2.5);
+            float textureDetail=noise2(p.xz*98.);
+            float detail=mix(textureDetail,.5,smoothstep(10.,29.,t));
+            vec3 warmGrass=mix(vec3(.029,.073,.013),vec3(.130,.229,.047),f)*(.66+.75*detail);
+            vec3 dreamyGrass=mix(vec3(.045,.105,.095),vec3(.14,.28,.22),f)*(.68+.75*detail);
+            vec3 grass=mix(warmGrass,dreamyGrass,uLavenderTint*.65);
+            float blade=sin(145.*p.x+45.*p.z+3.*noise2(p.xz*21.)+.22*sin(iTime*2.+p.z))*sin(p.z*159.-38.*p.x);
+            grass+=vec3(.046,.063,.012)*max(0.,blade)*smoothstep(.38,.73,f)*(1.-smoothstep(8.,22.,t));
+            float r=length(p.xz);
+            grass*=mix(.72,1.0,smoothstep(2.20,2.45,r));
+            n=normalize(vec3((noise2(p.xz*52.+vec2(.23,0.))-textureDetail)*.25,1.,
+                             (noise2(p.xz*52.+vec2(0,.23))-textureDetail)*.25));
+            return grass;
+          }
+
+          vec3 surface(vec3 p,vec3 n,vec3 rd,float m,float t,bool simple){
+            float grain=noise2(p.xz*74.+p.y*vec2(26.,-29.));
+            vec3 c=WHITE;
+            float shine=.12, rough=31.;
+            if(m<.5)c=groundColor(p,t,n);
+            else if(m<3.5){
+              float f=fbm(p.xz*7.+p.y*vec2(6.,-8.));
+              float vein=pow(.5+.5*sin(15.*p.x+9.*p.z+10.*f+9.*p.y),15.);
+              vec3 warmStone=mix(vec3(.52,.45,.36),vec3(.94,.85,.72),f)-vec3(.16,.12,.09)*vein;
+              vec3 pearlStone=mix(vec3(.56,.54,.72),vec3(.92,.90,.98),f)-vec3(.12,.11,.18)*vein;
+              c=mix(warmStone,pearlStone,uLavenderTint*.78);
+              if(m>1.5 && m<2.5){
+                float a=atan(p.z,p.x+1e-6),r=length(p.xz);
+                float grout=1.-smoothstep(.005,.021,abs(fract(a*52./TAU+.5)-.5));
+                c*=mix(.77,1.,hash11(floor(a*52./TAU+.5)+17.))*(1.-.31*grout*smoothstep(2.12,2.25,r));
+              }
+              c*=.87+.24*grain;
+            }
+            float ndl=max(0.,dot(n,SUN));
+            float sh=simple?1.:(ndl>.005?shadowAt(p,n):0.);
+            float contact=1.;
+            if(!simple){
+              float h=mapScene(p+.085*n).x;
+              contact=mix(.69,1.,smoothstep(.005,.083,h));
+            }
+            float hemi=.30+.24*max(0.,n.y);
+            float spec=pow(max(0.,dot(n,normalize(SUN-rd))),rough)*shine*sh;
+            vec3 sunTint=mix(vec3(1.22,.98,.72),vec3(1.12,.96,1.18),uLavenderTint*.65);
+            vec3 col=c*(hemi*vec3(.76,.86,1.03)*contact+1.33*ndl*sh*sunTint)+vec3(1.,.85,.75)*spec;
+
+            float shellGlow = exp(-abs(p.y - UPPER_Y) * 6.5) * smoothstep(UPPER_R + 0.1, UPPER_R - 0.15, length(p.xz))
+                            + exp(-abs(p.y - LOWER_Y) * 5.5) * smoothstep(LOWER_R + 0.1, LOWER_R - 0.20, length(p.xz));
+            col += vec3(0.56, 0.64, 0.94) * shellGlow * (0.06 + uSurgeGlow * 0.26);
+            return col;
+          }
+
+          float fetchWave(vec2 p){
+            ivec2 dim=textureSize(iChannel0,0);
+            int n=waveSize(vec2(dim));
+            if(n<16)return 0.;
+            vec2 q=clamp((p/WAVE_DOMAIN*.5+.5)*float(n)-.5,vec2(0.),vec2(float(n)-2.01));
+            ivec2 b=ivec2(q);
+            vec2 f=fract(q);
+            f=f*f*(3.-2.*f);
+            return mix(mix(texelFetch(iChannel0,b,0).r,texelFetch(iChannel0,b+ivec2(1,0),0).r,f.x),
+                       mix(texelFetch(iChannel0,b+ivec2(0,1),0).r,texelFetch(iChannel0,b+ivec2(1,1),0).r,f.x),f.y);
+          }
+
+          // Multi-scale organic liquid swells & micro-ripples (lively water motion without linear stripe patterns)
+          float windWaves(vec2 p,float tier){
+            float t=iTime*.82;
+            float freq=tier>0.?3.1:2.05;
+            vec2 warp=vec2(
+              noise2(p*1.45+vec2(t*.46,-t*.34)),
+              noise2(p*1.45+vec2(-t*.38,t*.44)+7.3)
+            )-.5;
+            vec2 q=p+warp*.24;
+            float swell=fbm(q*freq+vec2(t*.52,-t*.40));
+            float chop=noise2(q*(freq*2.35)+vec2(-t*1.12,t*.96)+11.4);
+            float amp=tier>0.?.032:.026;
+            return (swell*.70+chop*.30-.5)*amp;
+          }
+
+          vec3 lilyPads(vec3 water,vec2 q,float r,float shadow){
+            if(r<0.42 || r>2.10)return water;
+            for(int i=0;i<12;i++){
+              vec4 pad=uLilyPads[i];
+              vec2 dRaw=q-pad.xy;
+              float leafR=abs(pad.z);
+              if(dot(dRaw,dRaw)>sq(leafR*1.38))continue;
+
+              float fi=float(i);
+              vec2 d=rotateXZ(dRaw,pad.w);
+              float len=length(d),ang=atan(d.y,d.x+1e-6);
+              float edge=len-(leafR+.006*cos(ang*5.));
+              edge=max(edge,min(-d.x,.38*d.x-abs(d.y)));
+              float leaf=1.-smoothstep(-.007,.008,edge);
+              if(leaf<=0.001)continue;
+
+              float vein=pow(.5+.5*cos(ang*14.+8.*len),11.);
+              vec3 green=mix(vec3(.040,.138,.044),vec3(.122,.299,.091),noise2(d*33.+fi*3.7))*(.70+.66*shadow);
+              green+=vec3(.066,.101,.024)*vein;
+              water=mix(water,green,leaf);
+
+              if(pad.z<0.){
+                float fr=leafR*.44+.010*cos(ang*8.);
+                float petal=(1.-smoothstep(fr-.006,fr+.006,len))*(.72+.28*cos(ang*8.));
+                vec3 pink=mix(vec3(.73,.30,.44),vec3(.96,.71,.70),smoothstep(.015,fr,len));
+                water=mix(water,pink*(.65+.44*shadow),petal);
+                water=mix(water,vec3(.83,.54,.22),1.-smoothstep(.009,.016,len));
+              }
+            }
+            return water;
+          }
+
+          vec3 shadeWater(vec3 p,vec3 rd,float tier,float hitDist){
+            vec2 q=p.xz,ex=vec2(.032,0.);
+            float hx=(windWaves(q+ex.xy,tier)-windWaves(q-ex.xy,tier))*.5;
+            float hz=(windWaves(q+ex.yx,tier)-windWaves(q-ex.yx,tier))*.5;
+            vec2 slope=vec2(-hx,-hz)*(1.35/ex.x);
+            if(tier==0.){
+              vec2 ew=vec2(.036,0.);
+              float whx=(fetchWave(q+ew.xy)-fetchWave(q-ew.xy))*.5;
+              float whz=(fetchWave(q+ew.yx)-fetchWave(q-ew.yx))*.5;
+              slope+=vec2(-whx,-whz)*(.48/ew.x);
+            }
+            // Natural liquid wave slope limit (~21 deg max): dynamic glossy undulation with zero grazing artifacts
+            float slopeLen=length(slope);
+            if(slopeLen>.38) slope*=.38/slopeLen;
+            vec3 n=normalize(vec3(slope.x,1.,slope.y));
+            float r=length(q);
+            float depth=tier==0.?mix(.28,.115,smoothstep(1.82,2.12,r)):.105*(1.-.55*smoothstep(.2,.87,r));
+            vec3 refr=refract(rd,n,1./1.333);
+            vec2 refrOffset = refr.xz * depth / max(.3, -refr.y);
+            vec2 b = q + refrOffset;
+
+            float joints=max(abs(fract(b.x*5.)-.5),abs(fract(b.y*5.)-.5));
+            float tiles=(1.-.35*smoothstep(.452,.498,joints))*(.69+.35*hash21(floor(b*5.)));
+            vec3 sand=tier==0.?mix(vec3(.072,.203,.182),vec3(.150,.373,.305),smoothstep(.36,1.95,r))*tiles:
+                               vec3(.34,.51,.46);
+            float shadow=shadowAt(p,vec3(0,1,0));
+            vec3 classicPool = sand*(.65+.64*shadow);
+
+            // Luminous procedural face, rune & fractal gas water texture without linear caustic lines
+            vec3 cosmicWater = evalShadertoyWater(q, refrOffset, tier, hitDist, abs(rd.y));
+            cosmicWater *= (0.84 + 0.16 * shadow);
+
+            float abyssMix = sat(uLavenderTint);
+            vec3 body = mix(classicPool, cosmicWater, abyssMix);
+
+            vec3 refl=reflect(rd,n);
+            vec3 reflected=environment(refl);
+            float nearT=max(.05,-dot(q,refl.xz)/max(.001,dot(refl.xz,refl.xz)));
+            if(QUALITY==1 && refl.y>-.02 && length(q+nearT*refl.xz)<1.19 && tier==0.){
+              vec3 org=p+.018*vec3(0,1,0);
+              vec2 h=trace(org,refl,5.0);
+              if(h.y>.5) {
+                vec3 pos=org+refl*h.x;
+                reflected=surface(pos,normalAt(pos,h.x),refl,h.y,h.x,true)*.84;
+              }
+            }
+            float ndv=sat(dot(-rd,n));
+            float fres=.028+.972*pow(1.-ndv,4.2);
+            vec3 halfVec=normalize(SUN-rd);
+            float ndh=sat(dot(n,halfVec));
+            float specTight=pow(ndh,145.)*1.25;
+            float specBroad=pow(ndh,26.)*0.16;
+            float waveCrest=smoothstep(0.08,0.34,length(slope));
+
+            // Clear dark-water Fresnel: keep abyssal obsidian-teal depth rich while glossy moving wave crests & glints ride on top
+            vec3 tintedRefl = reflected * mix(vec3(1.0), vec3(0.46, 0.64, 0.84), abyssMix);
+            float reflMix = clamp(fres * mix(0.85, 0.28, abyssMix) + waveCrest * 0.085 + 0.015, 0., 0.48);
+            vec3 outC = mix(body, tintedRefl, reflMix)
+                      + vec3(0.86, 0.98, 1.15) * (specTight + specBroad) * (0.38 + 0.62 * shadow);
+
+            if (abyssMix > 0.01) {
+              vec2 localUV;
+              vec2 uvMin, uvMax;
+              if (tier < 0.5) {
+                vec2 norm = q / (2.0 * WAVE_DOMAIN) + 0.5;
+                localUV = vec2(norm.x * 0.5, norm.y);
+                uvMin = vec2(0.002, 0.002);
+                uvMax = vec2(0.498, 0.998);
+              } else if (tier < 1.5) {
+                vec2 norm = q / (2.0 * 1.18) + 0.5;
+                localUV = vec2(0.5 + norm.x * 0.25, norm.y * 0.5);
+                uvMin = vec2(0.502, 0.002);
+                uvMax = vec2(0.748, 0.498);
+              } else {
+                vec2 norm = q / (2.0 * 0.68) + 0.5;
+                localUV = vec2(0.75 + norm.x * 0.25, norm.y * 0.5);
+                uvMin = vec2(0.752, 0.002);
+                uvMax = vec2(0.998, 0.498);
+              }
+              vec2 duckUV = clamp(localUV, uvMin, uvMax);
+              vec4 duck = texture(uDuckweedTex, duckUV);
+              // Crisp alpha response without bloating fine glyph strokes
+              float duckAlpha = smoothstep(0.14, 0.84, duck.a) * abyssMix;
+              vec4 duckShadow = texture(uDuckweedTex, clamp(localUV - vec2(0.0014, 0.0024), uvMin, uvMax));
+              outC *= 1.0 - smoothstep(0.18, 0.78, duckShadow.a) * 0.34 * abyssMix;
+              vec3 duckLit = duck.rgb * (1.10 + 0.16 * shadow);
+              outC = mix(outC, duckLit, duckAlpha);
+            }
+
+            return tier==0.?lilyPads(outC,q,r,shadow):outC;
+          }
+
+          vec4 render(vec3 ro,vec3 rd){
+            float ground=rd.y<0.?min(FAR,-ro.y/rd.y):FAR;
+            vec2 h=trace(ro,rd,ground);
+            float t=h.x;
+            vec3 p=ro+rd*t;
+            vec3 c=vec3(0.);
+            float alpha=1.0;
+
+            float wt=t,tier=-1.;
+            if(rd.y<-.0001){
+              for(int i=0;i<3;i++){
+                float y=i==0?POOL_Y:(i==1?LOWER_W:UPPER_W);
+                float r=i==0?POOL_R:(i==1?LOWER_R*.941:UPPER_R*.942);
+                float tp=(y-ro.y)/rd.y;
+                if(tp>0. && tp<wt && length(ro.xz+rd.xz*tp)<r){wt=tp;tier=float(i);}
+              }
+            }
+
+            if(tier>=0.){
+              p=ro+wt*rd;
+              c=shadeWater(p,rd,tier,wt);
+              t=wt;
+              alpha=1.0;
+            }else if(h.y>0.){
+              c=surface(p,normalAt(p,t),rd,h.y,t,false);
+              alpha=1.0;
+            }else if(t<FAR){
+              float rGround=length(p.xz);
+              float lawnMask=1.0-smoothstep(uGrassRadius-1.2, uGrassRadius, rGround);
+              if(lawnMask>0.002){
+                c=surface(p,vec3(0,1,0),rd,0.,t,false);
+                alpha=lawnMask;
+              }else{
+                t=FAR;
+                alpha=0.0;
+              }
+            }else{
+              alpha=0.0;
+            }
+
+            return vec4(c, alpha);
+          }
+
+          void main(){
+            vec2 fragCoord = gl_FragCoord.xy;
+            vec2 uv=(2.*fragCoord-iResolution.xy)/min(iResolution.x,iResolution.y);
+            uv -= uStageOffset;
+
+            float ang = uCameraAngles.x;
+            float height = uCameraAngles.y;
+
+            vec3 ro=vec3(uCameraDist*cos(ang),height,uCameraDist*sin(ang));
+            vec3 z=normalize(uLookAt-ro);
+            vec3 x=normalize(cross(z,vec3(0,1,0))),y=cross(x,z);
+
+            vec4 res=render(ro,normalize(uv.x*x+uv.y*y+uFocal*z));
+            vec3 col=res.rgb;
+            col=1.-exp(-1.28*max(col,0.));
+            col=pow(col,vec3(.4545));
+
+            fragColor=vec4(col, res.a);
+          }
+        `;
+
+        function createLCProgram(vsSrc, fsSrc) {
+          const vs = lcGl.createShader(lcGl.VERTEX_SHADER);
+          lcGl.shaderSource(vs, vsSrc);
+          lcGl.compileShader(vs);
+          if (!lcGl.getShaderParameter(vs, lcGl.COMPILE_STATUS)) {
+            console.error("Fountain VS compile error:", lcGl.getShaderInfoLog(vs));
+          }
+          const fs = lcGl.createShader(lcGl.FRAGMENT_SHADER);
+          lcGl.shaderSource(fs, fsSrc);
+          lcGl.compileShader(fs);
+          if (!lcGl.getShaderParameter(fs, lcGl.COMPILE_STATUS)) {
+            console.error("Fountain FS compile error:", lcGl.getShaderInfoLog(fs));
+          }
+          const prog = lcGl.createProgram();
+          lcGl.attachShader(prog, vs);
+          lcGl.attachShader(prog, fs);
+          lcGl.linkProgram(prog);
+          return prog;
+        }
+
+        const bufferAProg = createLCProgram(vertexShaderSource, bufferAFragmentSource);
+        const imageProg = createLCProgram(vertexShaderSource, imageFragmentSource);
+
+        const quadBuf = lcGl.createBuffer();
+        lcGl.bindBuffer(lcGl.ARRAY_BUFFER, quadBuf);
+        lcGl.bufferData(
+          lcGl.ARRAY_BUFFER,
+          new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+          lcGl.STATIC_DRAW
+        );
+
+        const SIM_SIZE = 256;
+        const zeroWaveData = new Float32Array(SIM_SIZE * SIM_SIZE * 4);
+        function createWaveFBO() {
+          const tex = lcGl.createTexture();
+          lcGl.bindTexture(lcGl.TEXTURE_2D, tex);
+          lcGl.texImage2D(lcGl.TEXTURE_2D, 0, lcGl.RGBA16F, SIM_SIZE, SIM_SIZE, 0, lcGl.RGBA, lcGl.FLOAT, zeroWaveData);
+          lcGl.texParameteri(lcGl.TEXTURE_2D, lcGl.TEXTURE_MIN_FILTER, lcGl.NEAREST);
+          lcGl.texParameteri(lcGl.TEXTURE_2D, lcGl.TEXTURE_MAG_FILTER, lcGl.NEAREST);
+          lcGl.texParameteri(lcGl.TEXTURE_2D, lcGl.TEXTURE_WRAP_S, lcGl.CLAMP_TO_EDGE);
+          lcGl.texParameteri(lcGl.TEXTURE_2D, lcGl.TEXTURE_WRAP_T, lcGl.CLAMP_TO_EDGE);
+
+          const fbo = lcGl.createFramebuffer();
+          lcGl.bindFramebuffer(lcGl.FRAMEBUFFER, fbo);
+          lcGl.framebufferTexture2D(lcGl.FRAMEBUFFER, lcGl.COLOR_ATTACHMENT0, lcGl.TEXTURE_2D, tex, 0);
+          lcGl.bindFramebuffer(lcGl.FRAMEBUFFER, null);
+          return { tex, fbo };
+        }
+
+        const waveFBOs = [createWaveFBO(), createWaveFBO()];
+        let pingPongIdx = 0;
+
+        const DUCK_TEX_W = 2048;
+        const DUCK_TEX_H = 1024;
+        const duckweedCanvas = document.createElement("canvas");
+        duckweedCanvas.width = DUCK_TEX_W;
+        duckweedCanvas.height = DUCK_TEX_H;
+        const duckCtx = duckweedCanvas.getContext("2d");
+
+        const duckweedTex = lcGl.createTexture();
+        lcGl.bindTexture(lcGl.TEXTURE_2D, duckweedTex);
+        lcGl.texImage2D(lcGl.TEXTURE_2D, 0, lcGl.RGBA, DUCK_TEX_W, DUCK_TEX_H, 0, lcGl.RGBA, lcGl.UNSIGNED_BYTE, duckweedCanvas);
+        lcGl.generateMipmap(lcGl.TEXTURE_2D);
+        lcGl.texParameteri(lcGl.TEXTURE_2D, lcGl.TEXTURE_MIN_FILTER, lcGl.LINEAR_MIPMAP_LINEAR);
+        lcGl.texParameteri(lcGl.TEXTURE_2D, lcGl.TEXTURE_MAG_FILTER, lcGl.LINEAR);
+        lcGl.texParameteri(lcGl.TEXTURE_2D, lcGl.TEXTURE_WRAP_S, lcGl.CLAMP_TO_EDGE);
+        lcGl.texParameteri(lcGl.TEXTURE_2D, lcGl.TEXTURE_WRAP_T, lcGl.CLAMP_TO_EDGE);
+
+        const bufUniforms = {
+          iResolution: lcGl.getUniformLocation(bufferAProg, "iResolution"),
+          iTime: lcGl.getUniformLocation(bufferAProg, "iTime"),
+          iTimeDelta: lcGl.getUniformLocation(bufferAProg, "iTimeDelta"),
+          iFrame: lcGl.getUniformLocation(bufferAProg, "iFrame"),
+          iChannel0: lcGl.getUniformLocation(bufferAProg, "iChannel0")
+        };
+
+        const imgUniforms = {
+          iResolution: lcGl.getUniformLocation(imageProg, "iResolution"),
+          iTime: lcGl.getUniformLocation(imageProg, "iTime"),
+          uSimTime: lcGl.getUniformLocation(imageProg, "uSimTime"),
+          uCameraAngles: lcGl.getUniformLocation(imageProg, "uCameraAngles"),
+          uLookAt: lcGl.getUniformLocation(imageProg, "uLookAt"),
+          iChannel0: lcGl.getUniformLocation(imageProg, "iChannel0"),
+          uDuckweedTex: lcGl.getUniformLocation(imageProg, "uDuckweedTex"),
+          uLilyPads: lcGl.getUniformLocation(imageProg, "uLilyPads"),
+          uCameraDist: lcGl.getUniformLocation(imageProg, "uCameraDist"),
+          uFocal: lcGl.getUniformLocation(imageProg, "uFocal"),
+          uStageOffset: lcGl.getUniformLocation(imageProg, "uStageOffset"),
+          uGrassRadius: lcGl.getUniformLocation(imageProg, "uGrassRadius"),
+          uLavenderTint: lcGl.getUniformLocation(imageProg, "uLavenderTint"),
+          uSurgeGlow: lcGl.getUniformLocation(imageProg, "uSurgeGlow")
+        };
+
+        // Quiet, understated English narration for each camera movement
+        const LC_CAMERA_CHAPTERS = [
+          {
+            title: "The Fountain",
+            en: "Words rise from the carved stone fountain and drift softly into the water below.",
+            camHeight: 5.05,
+            cameraDist: 6.85,
+            rFocus: 0.0,
+            yFocus: 1.05,
+            sideAng: 0.0,
+            focal: 2.52,
+            panX: 0.08,
+            panY: -0.02,
+            angSpeed: 0.10,
+            duration: 5.6
+          },
+          {
+            title: "Across the Still Water",
+            en: "Floating letters and tiny drifting leaves linger among the lily pads, gently nudging one another on the calm surface.",
+            camHeight: 3.75,
+            cameraDist: 4.30,
+            rFocus: 1.28,
+            yFocus: 0.33,
+            sideAng: 0.22,
+            focal: 5.35,
+            panX: 0.12,
+            panY: 0.04,
+            angSpeed: 0.09,
+            duration: 7.6
+          },
+          {
+            title: "The Stone Basins",
+            en: "Along the scalloped stone bowls, falling letters skip across the water's edge before slipping down to the lower tier.",
+            camHeight: 3.45,
+            cameraDist: 4.10,
+            rFocus: 0.58,
+            yFocus: 1.46,
+            sideAng: -0.16,
+            focal: 4.75,
+            panX: 0.12,
+            panY: 0.02,
+            angSpeed: 0.11,
+            duration: 7.2
+          },
+          {
+            title: "From the Highest Spout",
+            en: "Slender arcs of words spill from the top spout and scatter into the upper basin.",
+            camHeight: 3.35,
+            cameraDist: 3.90,
+            rFocus: 0.0,
+            yFocus: 2.06,
+            sideAng: 0.0,
+            focal: 5.15,
+            panX: 0.12,
+            panY: -0.02,
+            angSpeed: 0.12,
+            duration: 6.8
+          },
+          {
+            title: "Along the Pool's Edge",
+            en: "Soft ripples travel outward to the carved stone rim, carrying the quiet shimmer of the sky across the deep blue pool.",
+            camHeight: 3.88,
+            cameraDist: 4.45,
+            rFocus: 1.48,
+            yFocus: 0.34,
+            sideAng: -0.28,
+            focal: 4.95,
+            panX: 0.12,
+            panY: 0.04,
+            angSpeed: 0.09,
+            duration: 7.4
+          }
+        ];
+
+        const lcState = {
+          camAng: 0.99,
+          camHeight: LC_CAMERA_CHAPTERS[0].camHeight,
+          cameraDist: LC_CAMERA_CHAPTERS[0].cameraDist,
+          focal: LC_CAMERA_CHAPTERS[0].focal,
+          rFocus: LC_CAMERA_CHAPTERS[0].rFocus,
+          yFocus: LC_CAMERA_CHAPTERS[0].yFocus,
+          sideAng: LC_CAMERA_CHAPTERS[0].sideAng,
+          lookAt: [0.0, 1.05, 0.0],
+          panX: LC_CAMERA_CHAPTERS[0].panX,
+          panY: LC_CAMERA_CHAPTERS[0].panY,
+          targetHeight: LC_CAMERA_CHAPTERS[0].camHeight,
+          targetDist: LC_CAMERA_CHAPTERS[0].cameraDist,
+          targetFocal: LC_CAMERA_CHAPTERS[0].focal,
+          targetRFocus: LC_CAMERA_CHAPTERS[0].rFocus,
+          targetYFocus: LC_CAMERA_CHAPTERS[0].yFocus,
+          targetSideAng: LC_CAMERA_CHAPTERS[0].sideAng,
+          targetPanX: LC_CAMERA_CHAPTERS[0].panX,
+          targetPanY: LC_CAMERA_CHAPTERS[0].panY,
+          grassRadius: 7.0,
+          lavenderTint: 1.0,
+          flowSpeed: 0.88,
+          bounceElasticity: 1.15,
+          fontSizeScale: 0.96,
+          surgeGlow: 0.0,
+          chapterIdx: 0,
+          chapterTimer: 0.0
+        };
+
+        function applyLCChapter(idx, immediate = false) {
+          lcState.chapterIdx = ((idx % LC_CAMERA_CHAPTERS.length) + LC_CAMERA_CHAPTERS.length) % LC_CAMERA_CHAPTERS.length;
+          lcState.chapterTimer = 0.0;
+          const ch = LC_CAMERA_CHAPTERS[lcState.chapterIdx];
+          lcState.targetHeight = ch.camHeight;
+          lcState.targetDist = ch.cameraDist;
+          lcState.targetFocal = ch.focal;
+          lcState.targetRFocus = ch.rFocus;
+          lcState.targetYFocus = ch.yFocus;
+          lcState.targetSideAng = ch.sideAng;
+          lcState.targetPanX = ch.panX;
+          lcState.targetPanY = ch.panY;
+
+          if (jellyBox) {
+            jellyBox.setContent(ch.title, [ch.en], immediate);
+          }
+        }
+
+        function cosinePaletteCSS(h, boost = 1.0, alpha = 1.0) {
+          const wonderlandHues = [
+            [255, 138, 228],
+            [92, 255, 198],
+            [255, 232, 148],
+            [218, 142, 255],
+            [120, 248, 255]
+          ];
+          const pos = (((h % 1) + 1) % 1) * wonderlandHues.length;
+          const idx0 = Math.floor(pos) % wonderlandHues.length;
+          const idx1 = (idx0 + 1) % wonderlandHues.length;
+          const frac = pos - Math.floor(pos);
+
+          const c0 = wonderlandHues[idx0];
+          const c1 = wonderlandHues[idx1];
+          const r = Math.min(255, Math.floor((c0[0] + (c1[0] - c0[0]) * frac) * boost));
+          const g = Math.min(255, Math.floor((c0[1] + (c1[1] - c0[1]) * frac) * boost));
+          const b = Math.min(255, Math.floor((c0[2] + (c1[2] - c0[2]) * frac) * boost));
+          return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        }
+
+        const runeStrokeStamps = [];
+        function drawTaperedBrushStroke(ctx, x1, y1, cx, cy, x2, y2, wStart, wEnd) {
+          const steps = 14;
+          for (let i = 0; i < steps; i++) {
+            const t0 = i / steps;
+            const t1 = (i + 1) / steps;
+            const u0 = 1 - t0, u1 = 1 - t1;
+            const px0 = u0 * u0 * x1 + 2 * u0 * t0 * cx + t0 * t0 * x2;
+            const py0 = u0 * u0 * y1 + 2 * u0 * t0 * cy + t0 * t0 * y2;
+            const px1 = u1 * u1 * x1 + 2 * u1 * t1 * cx + t1 * t1 * x2;
+            const py1 = u1 * u1 * y1 + 2 * u1 * t1 * cy + t1 * t1 * y2;
+            ctx.lineWidth = wStart + (wEnd - wStart) * (t0 * t0);
+            ctx.beginPath();
+            ctx.moveTo(px0, py0);
+            ctx.lineTo(px1, py1);
+            ctx.stroke();
+          }
+        }
+
+        function buildRigidStrokeStamps() {
+          runeStrokeStamps.length = 0;
+          const S = 160;
+          const C = S * 0.5;
+
+          // Clean, legible single poetic & linguistic glyphs (no heavy code tokens or half-sliced characters)
+          const primaryFragments = [
+            "語", "詞", "意", "夢", "幻", "庭", "泉", "水",
+            "影", "声", "光", "流", "風", "花", "記", "響",
+            "浮", "萍", "雲", "月", "言", "心", "詩", "韻",
+            "露", "霧", "波", "漣", "静", "柔", "羽", "星",
+            "讠", "氵", "忄", "艹", "纟", "辶", "彳", "阝",
+            "a", "e", "o", "s", "r", "m", "n", "l",
+            "æ", "ø", "ə", "λ", "ψ", "φ", "§", "∞",
+            "u", "i", "v", "w", "y", "c", "h", "t"
+          ];
+          const delicateAccents = ["·", "∘", "′", "°", "~", "✦", ",", ";", "—", "…"];
+
+          for (let idx = 0; idx < 64; idx++) {
+            const cvs = document.createElement("canvas");
+            cvs.width = S;
+            cvs.height = S;
+            const ctx = cvs.getContext("2d");
+
+            const h = (idx * 0.193 + 0.05) % 1.0;
+            const subH = (h + 0.14) % 1.0;
+            const mainColor = cosinePaletteCSS(h, 1.18, 1.0);
+            const subColor = cosinePaletteCSS(subH, 1.12, 0.88);
+            const glowColor = cosinePaletteCSS(h, 1.05, 0.55);
+
+            const mainText = primaryFragments[idx % primaryFragments.length];
+            const accentText = delicateAccents[(idx * 3 + 1) % delicateAccents.length];
+
+            ctx.lineCap = "round";
+            ctx.lineJoin = "round";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+
+            // 1) Delicate curved water-leaf arc framing the outer rim (never crossing through the glyph)
+            const arcStart = hash11JS(idx * 4.3) * TAU;
+            const arcSpan = 0.85 + hash11JS(idx * 6.7) * 0.75;
+            const arcR = 52;
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(C, C, arcR, arcStart, arcStart + arcSpan);
+            ctx.strokeStyle = "rgba(10, 16, 46, 0.65)";
+            ctx.lineWidth = 4.2;
+            ctx.stroke();
+            ctx.strokeStyle = subColor;
+            ctx.lineWidth = 1.9;
+            ctx.stroke();
+            ctx.restore();
+
+            // 2) Small punctuation bud tucked neatly near the outer edge
+            const budAng = arcStart + arcSpan + 0.55;
+            const budX = C + Math.cos(budAng) * 50;
+            const budY = C + Math.sin(budAng) * 50;
+            ctx.save();
+            ctx.translate(budX, budY);
+            ctx.font = '500 20px "Instrument Serif", Georgia, serif';
+            ctx.lineWidth = 2.6;
+            ctx.strokeStyle = "rgba(10, 16, 46, 0.75)";
+            ctx.strokeText(accentText, 0, 0);
+            ctx.fillStyle = subColor;
+            ctx.fillText(accentText, 0, 0);
+            ctx.restore();
+
+            // 3) Crisp, intact, slender-stroke primary character (zero harsh clipping, open inner counters)
+            const isCJK = mainText.charCodeAt(0) > 255 && !/[æøəλψφ§∞]/.test(mainText);
+            const fontSize = isCJK ? 56 : 62;
+            ctx.save();
+            ctx.translate(C, C + (isCJK ? 2 : 0));
+            ctx.rotate((hash11JS(idx * 13.9) - 0.5) * 0.22);
+            ctx.font = isCJK
+              ? `500 ${fontSize}px "Songti SC", "STSong", "Noto Serif SC", "PingFang SC", serif`
+              : `italic 400 ${fontSize}px "Instrument Serif", Georgia, serif`;
+
+            // Slender dark contrast edge for separation on water without clogging fine strokes
+            ctx.shadowBlur = 0;
+            ctx.lineWidth = 3.2;
+            ctx.strokeStyle = "rgba(10, 16, 46, 0.80)";
+            ctx.strokeText(mainText, 0, 0);
+
+            // Crisp luminous fill tinted softly with palette hue
+            ctx.shadowColor = glowColor;
+            ctx.shadowBlur = 2.5;
+            ctx.fillStyle = mainColor;
+            ctx.fillText(mainText, 0, 0);
+
+            // Subtle white inner core for crisp readability
+            ctx.shadowBlur = 0;
+            ctx.globalAlpha = 0.45;
+            ctx.fillStyle = "#ffffff";
+            ctx.fillText(mainText, 0, 0);
+            ctx.restore();
+
+            runeStrokeStamps.push(cvs);
+          }
+        }
+        buildRigidStrokeStamps();
+
+        const backCtx = backCanvas.getContext("2d");
+        const frontCtx = frontCanvas.getContext("2d");
+
+        const bgStreams = [];
+        const nozzles = [];
+        const travelers = [];
+        const impactRings = [];
+        const duckweeds = [];
+        const lilyPads = [];
+        const lilyPadUniformData = new Float32Array(12 * 4);
+
+        const bgChars = ["0", "1", "S", "E", "M", "A", "N", "T", "I", "C", "_", "/", ":", "."];
+        const wordBank = [
+          "SEMANTIC",
+          "DREAM_01",
+          "CYBORG",
+          "FLOW>>",
+          "SYNTAX",
+          "ONLINE",
+          "BUFFER",
+          "NODE_88"
+        ];
+
+        const STAMP_PALETTE = [
+          { fill: "#ffffff", stroke: "rgba(22, 38, 98, 0.88)", glow: "rgba(150, 238, 255, 0.92)", blur: 7 },
+          { fill: "#d8f8ff", stroke: "rgba(20, 48, 108, 0.88)", glow: "rgba(90, 220, 255, 0.88)", blur: 7 },
+          { fill: "#ffe0f7", stroke: "rgba(68, 24, 96, 0.88)", glow: "rgba(255, 130, 225, 0.88)", blur: 7 },
+          { fill: "#ead8ff", stroke: "rgba(42, 24, 102, 0.88)", glow: "rgba(175, 125, 255, 0.88)", blur: 7 },
+          { fill: "#fff0be", stroke: "rgba(72, 42, 18, 0.88)", glow: "rgba(255, 195, 90, 0.88)", blur: 7 },
+          { fill: "rgb(48, 66, 134)", stroke: "rgba(0,0,0,0)", glow: "rgba(120, 165, 245, 0.55)", blur: 4 },
+          { fill: "rgb(82, 60, 148)", stroke: "rgba(0,0,0,0)", glow: "rgba(190, 135, 255, 0.55)", blur: 4 }
+        ];
+
+        const stampCache = new Map();
+        function getStamp(ch, styleIdx) {
+          const k = `${ch}_${styleIdx}`;
+          if (stampCache.has(k)) return stampCache.get(k);
+          const st = STAMP_PALETTE[styleIdx] || STAMP_PALETTE[1];
+          const c = document.createElement("canvas");
+          c.width = 84;
+          c.height = 84;
+          const ctx = c.getContext("2d");
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.font = '500 42px "IBM Plex Mono", Consolas, monospace';
+          ctx.shadowColor = st.glow;
+          ctx.shadowBlur = Math.min(4.5, st.blur);
+          if (styleIdx <= 4) {
+            ctx.lineWidth = 2.4;
+            ctx.lineJoin = "round";
+            ctx.strokeStyle = st.stroke;
+            ctx.strokeText(ch, 42, 42);
+          }
+          ctx.fillStyle = st.fill;
+          ctx.fillText(ch, 42, 42);
+          stampCache.set(k, c);
+          return c;
+        }
+
+        let width = window.innerWidth;
+        let height = window.innerHeight;
+
+        const TIER_CONFIGS = [
+          { tier: 0, domain: WAVE_DOMAIN, minR: 0.44, maxR: 2.02, count: 136, baseRad: 0.068, radVar: 0.020, driftSpd: 0.22, ox: 0, oy: 0, pxSize: 1024 },
+          { tier: 1, domain: 1.18, minR: 0.16, maxR: 1.03, count: 44, baseRad: 0.056, radVar: 0.014, driftSpd: 0.18, ox: 1024, oy: 0, pxSize: 512 },
+          { tier: 2, domain: 0.68, minR: 0.10, maxR: 0.57, count: 22, baseRad: 0.046, radVar: 0.011, driftSpd: 0.15, ox: 1536, oy: 0, pxSize: 512 }
+        ];
+
+        function initLilyPadBodies() {
+          lilyPads.length = 0;
+          const radialZones = [0.64, 0.78, 0.92, 1.08, 1.22, 1.36, 1.48, 1.62, 1.74, 1.84, 1.92, 1.15];
+          for (let i = 0; i < 12; i++) {
+            const ang = (i * 2.39996 + hash11JS(i * 19.3) * 0.45) % TAU;
+            const r = radialZones[i] + (hash11JS(i * 31.1) - 0.5) * 0.08;
+            const leafR = 0.115 + hash11JS(i * 7.7) * 0.048;
+            const hasFlower = i % 3 === 0 || i === 7;
+            const wAng = hash11JS(i * 41.9) * TAU;
+            const spd = 0.055 + hash11JS(i * 13.5) * 0.035;
+
+            lilyPads.push({
+              x: Math.cos(ang) * r,
+              z: Math.sin(ang) * r,
+              vx: Math.cos(wAng) * spd,
+              vz: Math.sin(wAng) * spd,
+              wanderAng: wAng,
+              wanderSpd: spd,
+              radius: leafR,
+              hasFlower,
+              angle: hash11JS(i * 23.1) * TAU,
+              phase: hash11JS(i * 53.7) * TAU
+            });
+          }
+        }
+
+        function initDuckweedBodies() {
+          duckweeds.length = 0;
+          initLilyPadBodies();
+          // Permanent faces & runes are now rendered procedurally at full vector sharpness inside GLSL;
+          // duckweeds holds only transient splashed letters drifting briefly after landing from the fountain.
+        }
+
+        function initNozzles() {
+          nozzles.length = 0;
+          travelers.length = 0;
+          initDuckweedBodies();
+
+          const numStreams = 8;
+          for (let k = 0; k < numStreams; k++) {
+            const baseAngle = (k / numStreams) * TAU + 0.22;
+            const wordIdx = k % wordBank.length;
+            nozzles.push({
+              id: k,
+              baseAngle,
+              word: wordBank[wordIdx],
+              charCursor: 0,
+              pauseTimer: (k / numStreams) * 0.42,
+              charInterval: 0.115,
+              wordGap: 0.34,
+              styleIdx: 1 + (k % 3),
+              swayPhase: k * 1.3
+            });
+          }
+
+          for (let k = 0; k < numStreams; k++) {
+            const nz = nozzles[k];
+            const word = nz.word;
+            for (let c = 0; c < word.length; c++) {
+              const ch = word[c];
+              const ang = nz.baseAngle + Math.sin(c * 0.25 + k) * 0.06;
+              const ax = Math.cos(ang), az = Math.sin(ang);
+              const isMidTier = k % 2 === 1;
+              const tSim = c * 0.08 + 0.05;
+              const vr = isMidTier ? 0.55 : 0.48;
+              const vy0 = isMidTier ? 0.25 : 2.55;
+              const r0 = isMidTier ? UPPER_R + 0.02 : 0.036;
+              const y0 = isMidTier ? UPPER_Y + 0.02 : NOZZLE_Y;
+
+              travelers.push({
+                ch,
+                styleIdx: nz.styleIdx,
+                stage: isMidTier ? 1 : 0,
+                bouncedInStage: false,
+                x: ax * (r0 + vr * tSim),
+                y: y0 + vy0 * tSim - 0.5 * GRAVITY * tSim * tSim,
+                z: az * (r0 + vr * tSim),
+                vx: ax * vr,
+                vy: vy0 - GRAVITY * tSim,
+                vz: az * vr,
+                ax,
+                az,
+                squashTimer: 0,
+                spin: 0,
+                spinVel: 0,
+                size: 15.2,
+                age: tSim,
+                maxAge: 6.5
+              });
+            }
+          }
+        }
+
+        function emitNextWordChar(nz, time) {
+          if (travelers.length > 260) {
+            travelers.shift();
+          }
+
+          const idx = nz.word.length - 1 - nz.charCursor;
+          const ch = nz.word[idx];
+
+          const sway = Math.sin(time * 1.8 + nz.swayPhase) * 0.07;
+          const ang = nz.baseAngle + sway;
+          const ax = Math.cos(ang), az = Math.sin(ang);
+
+          const vr = 0.48 + 0.05 * Math.cos(time * 1.5 + nz.id);
+          const vy = 2.62 + 0.12 * Math.sin(time * 2.1 + nz.id);
+
+          travelers.push({
+            ch,
+            styleIdx: nz.styleIdx,
+            stage: 0,
+            bouncedInStage: false,
+            x: ax * 0.036,
+            y: NOZZLE_Y,
+            z: az * 0.036,
+            vx: ax * vr,
+            vy,
+            vz: az * vr,
+            ax,
+            az,
+            squashTimer: 0,
+            spin: 0,
+            spinVel: 0,
+            size: 15.5,
+            age: 0,
+            maxAge: 7.0
+          });
+
+          nz.charCursor++;
+          if (nz.charCursor >= nz.word.length) {
+            nz.charCursor = 0;
+            nz.pauseTimer = nz.wordGap;
+            const nextWordIdx = Math.floor(Math.random() * wordBank.length);
+            nz.word = wordBank[nextWordIdx];
+            nz.styleIdx = 1 + (nz.styleIdx % 3);
+          } else {
+            nz.pauseTimer = nz.charInterval;
+          }
+        }
+
+        function stepFluidAndDuckweedPhysics(dt, time, simTime) {
+          const simDt = Math.min(0.025, dt * 0.46 * lcState.flowSpeed);
+          const bounce = lcState.bounceElasticity;
+          const sizeScale = lcState.fontSizeScale;
+
+          for (let i = 0; i < nozzles.length; i++) {
+            const nz = nozzles[i];
+            nz.pauseTimer -= simDt;
+            if (nz.pauseTimer <= 0) {
+              emitNextWordChar(nz, time);
+            }
+          }
+
+          for (let i = travelers.length - 1; i >= 0; i--) {
+            const p = travelers[i];
+            p.age += simDt;
+            if (p.age >= p.maxAge) {
+              travelers.splice(i, 1);
+              continue;
+            }
+            if (p.squashTimer > 0) p.squashTimer = Math.max(0, p.squashTimer - simDt * 2.0);
+
+            p.x += p.vx * simDt;
+            p.y += p.vy * simDt;
+            p.z += p.vz * simDt;
+            p.vy -= GRAVITY * simDt;
+            p.spin += p.spinVel * simDt;
+
+            const r = Math.hypot(p.x, p.z) || 0.001;
+            const nx = p.x / r, nz = p.z / r;
+
+            if (p.stage === 0) {
+              if (r > UPPER_R + 0.04 && p.y < UPPER_W + 0.05) {
+                p.stage = 1;
+                p.bouncedInStage = false;
+              } else if (p.vy < 0 && p.y <= UPPER_W + 0.02 && r <= UPPER_R + 0.06) {
+                p.y = UPPER_W + 0.02;
+                p.squashTimer = 0.15;
+                for (let d = 0; d < duckweeds.length; d++) {
+                  const dw = duckweeds[d];
+                  if (dw.tier !== 2) continue;
+                  const dx = dw.x - p.x, dz = dw.z - p.z;
+                  const dist2 = dx * dx + dz * dz;
+                  if (dist2 < 0.06 && dist2 > 1e-6) {
+                    const dist = Math.sqrt(dist2);
+                    const imp = ((0.24 - dist) / 0.24) * 0.55 * bounce;
+                    dw.vx += (dx / dist) * imp;
+                    dw.vz += (dz / dist) * imp;
+                    dw.wanderAng = Math.atan2(dw.vz, dw.vx);
+                    dw.bumpGlow = 0.9;
+                  }
+                }
+                if (!p.bouncedInStage) {
+                  p.bouncedInStage = true;
+                  p.vy = (0.68 + Math.random() * 0.22) * bounce;
+                  const slideSpd = 0.62 + Math.random() * 0.14;
+                  p.vx = nx * slideSpd;
+                  p.vz = nz * slideSpd;
+                  p.spinVel = (Math.random() - 0.5) * 3.0;
+                  if (Math.random() < 0.3 && impactRings.length < 28) {
+                    impactRings.push({ x: p.x, y: UPPER_W + 0.01, z: p.z, r: 0.02, maxR: 0.15, alpha: 0.75, styleIdx: p.styleIdx });
+                  }
+                } else if (r < UPPER_R - 0.03) {
+                  p.vy = (0.22 + Math.random() * 0.12) * bounce;
+                  const rimGlide = 0.68 + Math.random() * 0.12;
+                  p.vx = nx * rimGlide;
+                  p.vz = nz * rimGlide;
+                } else {
+                  p.stage = 1;
+                  p.bouncedInStage = false;
+                  const spillSpd = 0.56 + Math.random() * 0.12;
+                  p.vx = nx * spillSpd;
+                  p.vz = nz * spillSpd;
+                  p.vy = 0.16;
+                  p.spin = 0;
+                  p.spinVel = 0;
+                }
+              }
+            }
+
+            if (p.stage === 1) {
+              if (r > LOWER_R + 0.05 && p.y < LOWER_W + 0.05) {
+                p.stage = 2;
+                p.bouncedInStage = false;
+              } else if (p.vy < 0 && p.y <= LOWER_W + 0.025 && r <= LOWER_R + 0.06) {
+                p.y = LOWER_W + 0.025;
+                p.squashTimer = 0.15;
+                for (let d = 0; d < duckweeds.length; d++) {
+                  const dw = duckweeds[d];
+                  if (dw.tier !== 1) continue;
+                  const dx = dw.x - p.x, dz = dw.z - p.z;
+                  const dist2 = dx * dx + dz * dz;
+                  if (dist2 < 0.09 && dist2 > 1e-6) {
+                    const dist = Math.sqrt(dist2);
+                    const imp = ((0.30 - dist) / 0.30) * 0.68 * bounce;
+                    dw.vx += (dx / dist) * imp;
+                    dw.vz += (dz / dist) * imp;
+                    dw.wanderAng = Math.atan2(dw.vz, dw.vx);
+                    dw.bumpGlow = 0.9;
+                  }
+                }
+                if (!p.bouncedInStage) {
+                  p.bouncedInStage = true;
+                  p.vy = (0.78 + Math.random() * 0.28) * bounce;
+                  const slideSpd = 0.75 + Math.random() * 0.18;
+                  const fanAng = Math.atan2(nz, nx) + (Math.random() - 0.5) * 0.22;
+                  p.vx = Math.cos(fanAng) * slideSpd;
+                  p.vz = Math.sin(fanAng) * slideSpd;
+                  p.spinVel = (Math.random() - 0.5) * 3.5;
+                  if (Math.random() < 0.35 && impactRings.length < 28) {
+                    impactRings.push({ x: p.x, y: LOWER_W + 0.01, z: p.z, r: 0.02, maxR: 0.20, alpha: 0.78, styleIdx: p.styleIdx });
+                  }
+                } else if (r < LOWER_R - 0.04) {
+                  p.vy = (0.25 + Math.random() * 0.14) * bounce;
+                  const rimGlide = 0.76 + Math.random() * 0.14;
+                  p.vx = nx * rimGlide;
+                  p.vz = nz * rimGlide;
+                } else {
+                  p.stage = 2;
+                  p.bouncedInStage = false;
+                  const cascadeSpd = 0.68 + Math.random() * 0.16;
+                  p.vx = nx * cascadeSpd;
+                  p.vz = nz * cascadeSpd;
+                  p.vy = 0.20;
+                  p.spin = 0;
+                  p.spinVel = 0;
+                }
+              }
+            }
+
+            if (p.y <= POOL_Y + 0.015) {
+              p.y = POOL_Y + 0.015;
+              p.squashTimer = 0.16;
+              if (!p.bouncedInStage && Math.random() < 0.45) {
+                p.bouncedInStage = true;
+                p.stage = 2;
+                p.vy = (0.72 + Math.random() * 0.38) * bounce;
+                const splashAng = Math.atan2(nz, nx) + (Math.random() - 0.5) * 0.45;
+                const splashSpd = 0.42 + Math.random() * 0.22;
+                p.vx = Math.cos(splashAng) * splashSpd;
+                p.vz = Math.sin(splashAng) * splashSpd;
+                p.spinVel = (Math.random() - 0.5) * 4.5;
+                if (impactRings.length < 28) {
+                  impactRings.push({ x: p.x, y: POOL_Y + 0.008, z: p.z, r: 0.025, maxR: 0.26, alpha: 0.82, styleIdx: p.styleIdx });
+                }
+              } else {
+                for (let d = 0; d < duckweeds.length; d++) {
+                  const dw = duckweeds[d];
+                  if (dw.tier !== 0) continue;
+                  const dx = dw.x - p.x;
+                  const dz = dw.z - p.z;
+                  const dist2 = dx * dx + dz * dz;
+                  if (dist2 < 0.12 && dist2 > 1e-5) {
+                    const dist = Math.sqrt(dist2);
+                    const impulse = ((0.34 - dist) / 0.34) * 0.36 * bounce;
+                    dw.vx += (dx / dist) * impulse;
+                    dw.vz += (dz / dist) * impulse;
+                    dw.bumpGlow = 0.6;
+                  }
+                }
+
+                if (r < 1.96 && duckweeds.length < 310) {
+                  const wAng = Math.atan2(p.vz, p.vx) + (Math.random() - 0.5) * 0.8;
+                  duckweeds.push({
+                    tier: 0,
+                    kind: "letter",
+                    stampIdx: 0,
+                    ch: p.ch,
+                    styleIdx: p.styleIdx,
+                    x: p.x,
+                    z: p.z,
+                    vx: Math.cos(wAng) * 0.24,
+                    vz: Math.sin(wAng) * 0.24,
+                    wanderAng: wAng,
+                    wanderSpd: 0.20,
+                    radius: 0.044,
+                    angle: (Math.random() - 0.5) * 0.7,
+                    omega: (Math.random() - 0.5) * 0.12,
+                    hue: 0.5,
+                    colorMain: "#fff",
+                    colorGlow: "#9cf",
+                    eyeDist: 0,
+                    eyeSize: 0,
+                    phase: Math.random() * TAU,
+                    bumpGlow: 0.5,
+                    temporary: true,
+                    age: 0,
+                    maxAge: 4.8 + Math.random() * 2.0
+                  });
+                }
+                travelers.splice(i, 1);
+              }
+            }
+          }
+
+          for (let i = 0; i < lilyPads.length; i++) {
+            const lp = lilyPads[i];
+            lp.wanderAng += Math.sin(time * 0.32 + lp.phase) * 0.45 * simDt;
+            const swirlX = Math.sin(lp.z * 1.8 + time * 0.25) * 0.04;
+            const swirlZ = Math.cos(lp.x * 1.8 - time * 0.22) * 0.04;
+            const tvx = Math.cos(lp.wanderAng) * lp.wanderSpd + swirlX;
+            const tvz = Math.sin(lp.wanderAng) * lp.wanderSpd + swirlZ;
+            lp.vx += (tvx - lp.vx) * 1.5 * simDt;
+            lp.vz += (tvz - lp.vz) * 1.5 * simDt;
+
+            for (let j = i + 1; j < lilyPads.length; j++) {
+              const other = lilyPads[j];
+              const dx = other.x - lp.x;
+              const dz = other.z - lp.z;
+              const d = Math.hypot(dx, dz) || 0.001;
+              const minD = lp.radius + other.radius + 0.08;
+              if (d < minD) {
+                const nx = dx / d, nz = dz / d;
+                const push = (minD - d) * 1.8 * simDt;
+                lp.vx -= nx * push;
+                lp.vz -= nz * push;
+                other.vx += nx * push;
+                other.vz += nz * push;
+              }
+            }
+
+            lp.x += lp.vx * simDt;
+            lp.z += lp.vz * simDt;
+            lp.angle += Math.sin(time * 0.45 + lp.phase) * 0.08 * simDt;
+
+            const r = Math.hypot(lp.x, lp.z) || 0.001;
+            const nx = lp.x / r, nz = lp.z / r;
+            const minR = 0.54 + lp.radius;
+            const maxR = 1.98 - lp.radius;
+            if (r < minR) {
+              lp.x = nx * minR;
+              lp.z = nz * minR;
+              lp.vx += nx * 0.08;
+              lp.vz += nz * 0.08;
+              lp.wanderAng = Math.atan2(lp.vz, lp.vx);
+            } else if (r > maxR) {
+              lp.x = nx * maxR;
+              lp.z = nz * maxR;
+              lp.vx -= nx * 0.08;
+              lp.vz -= nz * 0.08;
+              lp.wanderAng = Math.atan2(lp.vz, lp.vx);
+            }
+
+            const base = i * 4;
+            lilyPadUniformData[base] = lp.x;
+            lilyPadUniformData[base + 1] = lp.z;
+            lilyPadUniformData[base + 2] = lp.hasFlower ? -lp.radius : lp.radius;
+            lilyPadUniformData[base + 3] = lp.angle;
+          }
+
+          for (let tier = 0; tier < 3; tier++) {
+            const impacts = tierSpillImpacts[tier];
+            const pushRange = tier === 0 ? 0.26 : tier === 1 ? 0.18 : 0.14;
+            const pushR2 = pushRange * pushRange;
+            for (let k = 0; k < impacts.length; k++) {
+              const sp = impacts[k];
+              const impAge = (simTime + sp.offset - sp.flight) % sp.period;
+              if (impAge < 0 || impAge > 0.22) continue;
+              for (let i = 0; i < duckweeds.length; i++) {
+                const dw = duckweeds[i];
+                if (dw.tier !== tier) continue;
+                const dx = dw.x - sp.x;
+                const dz = dw.z - sp.z;
+                const d2 = dx * dx + dz * dz;
+                if (d2 < pushR2 && d2 > 1e-6) {
+                  const d = Math.sqrt(d2);
+                  const push = ((pushRange - d) / pushRange) * 0.85 * simDt * bounce;
+                  dw.vx += (dx / d) * push;
+                  dw.vz += (dz / d) * push;
+                }
+              }
+            }
+          }
+
+          const nDuck = duckweeds.length;
+          const springStiff = 9.5 * bounce;
+
+          for (let i = 0; i < nDuck; i++) {
+            const a = duckweeds[i];
+            for (let j = i + 1; j < nDuck; j++) {
+              const b = duckweeds[j];
+              if (a.tier !== b.tier) continue;
+
+              const dx = b.x - a.x;
+              const dz = b.z - a.z;
+              const d2 = dx * dx + dz * dz;
+              const minDist = (a.radius + b.radius) * sizeScale * 1.08;
+
+              if (d2 < minDist * minDist && d2 > 1e-7) {
+                const d = Math.sqrt(d2);
+                const nx = dx / d;
+                const nz = dz / d;
+                const overlap = minDist - d;
+
+                const softCorr = overlap * 0.18;
+                a.x -= nx * softCorr;
+                a.z -= nz * softCorr;
+                b.x += nx * softCorr;
+                b.z += nz * softCorr;
+
+                const rvx = b.vx - a.vx;
+                const rvz = b.vz - a.vz;
+                const velAlongNormal = rvx * nx + rvz * nz;
+
+                const repulse = overlap * springStiff * simDt;
+                const damp = velAlongNormal < 0 ? -velAlongNormal * 0.42 : 0;
+                const totalImp = repulse + damp;
+
+                a.vx -= nx * totalImp;
+                a.vz -= nz * totalImp;
+                b.vx += nx * totalImp;
+                b.vz += nz * totalImp;
+
+                a.wanderAng = Math.atan2(a.vz, a.vx);
+                b.wanderAng = Math.atan2(b.vz, b.vx);
+              }
+            }
+          }
+
+          for (let i = 0; i < nDuck; i++) {
+            const dw = duckweeds[i];
+            if (dw.tier !== 0) continue;
+            for (let l = 0; l < lilyPads.length; l++) {
+              const lp = lilyPads[l];
+              const dx = dw.x - lp.x;
+              const dz = dw.z - lp.z;
+              const d2 = dx * dx + dz * dz;
+              const minD = lp.radius + dw.radius * sizeScale * 0.92;
+              if (d2 < minD * minD && d2 > 1e-7) {
+                const d = Math.sqrt(d2);
+                const nx = dx / d, nz = dz / d;
+                const overlap = minD - d;
+                dw.x += nx * overlap * 0.35;
+                dw.z += nz * overlap * 0.35;
+                const vn = (dw.vx - lp.vx) * nx + (dw.vz - lp.vz) * nz;
+                if (vn < 0) {
+                  dw.vx -= nx * vn * 1.15;
+                  dw.vz -= nz * vn * 1.15;
+                  dw.wanderAng = Math.atan2(dw.vz, dw.vx);
+                }
+              }
+            }
+          }
+
+          const angDrag = Math.pow(0.06, simDt);
+
+          for (let i = nDuck - 1; i >= 0; i--) {
+            const dw = duckweeds[i];
+            if (dw.temporary) {
+              dw.age += simDt;
+              if (dw.age >= dw.maxAge) {
+                duckweeds.splice(i, 1);
+                continue;
+              }
+            }
+            if (dw.bumpGlow > 0) dw.bumpGlow = Math.max(0, dw.bumpGlow - simDt * 2.0);
+
+            const cfg = TIER_CONFIGS[dw.tier];
+            const smoothTurn =
+              Math.sin(time * 0.55 + dw.phase) * 0.75 +
+              Math.cos(time * 0.31 + dw.phase * 2.3) * 0.55;
+            dw.wanderAng += smoothTurn * simDt;
+
+            const freq = dw.tier === 0 ? 2.1 : dw.tier === 1 ? 3.6 : 5.5;
+            const flowX = Math.sin(dw.z * freq + time * 0.42 + dw.tier) * 0.11;
+            const flowZ = Math.cos(dw.x * freq - time * 0.38 + dw.tier) * 0.11;
+
+            const targetVx = Math.cos(dw.wanderAng) * dw.wanderSpd + flowX;
+            const targetVz = Math.sin(dw.wanderAng) * dw.wanderSpd + flowZ;
+
+            dw.vx += (targetVx - dw.vx) * 2.0 * simDt;
+            dw.vz += (targetVz - dw.vz) * 2.0 * simDt;
+
+            dw.omega *= angDrag;
+            dw.x += dw.vx * simDt;
+            dw.z += dw.vz * simDt;
+            dw.angle += dw.omega * simDt + Math.sin(time * 0.8 + dw.phase) * 0.04 * simDt;
+
+            const newR = Math.hypot(dw.x, dw.z) || 0.001;
+            const bnx = dw.x / newR, bnz = dw.z / newR;
+            const polarAng = Math.atan2(dw.z, dw.x);
+            const waveMargin =
+              cfg.tier === 0
+                ? 0.14 * Math.sin(polarAng * 3.0 + time * 0.15) + 0.10 * Math.cos(polarAng * 5.0 - time * 0.12)
+                : 0.04 * Math.sin(polarAng * 4.0 + time * 0.2);
+
+            const minR = cfg.minR + dw.radius * sizeScale;
+            const hardMaxR = cfg.maxR - dw.radius * sizeScale;
+            const softOuterStart = hardMaxR - 0.18 + waveMargin;
+
+            if (newR > softOuterStart) {
+              const inwardPull = (newR - softOuterStart) * 1.45 * simDt;
+              dw.vx -= bnx * inwardPull;
+              dw.vz -= bnz * inwardPull;
+              dw.wanderAng = Math.atan2(dw.vz, dw.vx);
+            }
+
+            if (newR < minR) {
+              dw.x = bnx * minR;
+              dw.z = bnz * minR;
+              const dot = dw.vx * bnx + dw.vz * bnz;
+              if (dot < 0) {
+                dw.vx -= 1.4 * dot * bnx;
+                dw.vz -= 1.4 * dot * bnz;
+                dw.wanderAng = Math.atan2(dw.vz, dw.vx);
+              }
+            } else if (newR > hardMaxR) {
+              dw.x = bnx * hardMaxR;
+              dw.z = bnz * hardMaxR;
+              const dot = dw.vx * bnx + dw.vz * bnz;
+              if (dot > 0) {
+                dw.vx -= 1.4 * dot * bnx;
+                dw.vz -= 1.4 * dot * bnz;
+                dw.wanderAng = Math.atan2(dw.vz, dw.vx);
+              }
+            }
+          }
+        }
+
+        const emotionTags = ["?", "!", "…", "~", "✦", "；", "♡", "×"];
+        function renderDuckweedSurfaceTexture(time) {
+          duckCtx.clearRect(0, 0, DUCK_TEX_W, DUCK_TEX_H);
+          const sizeScale = lcState.fontSizeScale;
+
+          for (let i = 0; i < duckweeds.length; i++) {
+            const dw = duckweeds[i];
+            const cfg = TIER_CONFIGS[dw.tier];
+            const worldToPx = cfg.pxSize / (2.0 * cfg.domain);
+            const px = cfg.ox + (dw.x / (2.0 * cfg.domain) + 0.5) * cfg.pxSize;
+            const py = cfg.oy + (dw.z / (2.0 * cfg.domain) + 0.5) * cfg.pxSize;
+            const radPx = dw.radius * sizeScale * worldToPx;
+
+            let alpha = 0.95;
+            if (dw.temporary) {
+              const fadeIn = Math.min(1.0, dw.age / 0.45);
+              const rem = dw.maxAge - dw.age;
+              const fadeOut = rem < 1.2 ? Math.max(0.0, rem / 1.2) : 1.0;
+              alpha = 0.95 * fadeIn * fadeOut;
+            }
+
+            duckCtx.save();
+            duckCtx.globalAlpha = alpha;
+            duckCtx.translate(px, py);
+            duckCtx.rotate(dw.angle);
+
+            if (dw.kind === "rune") {
+              const stamp = runeStrokeStamps[dw.stampIdx];
+              const drawD = radPx * 2.55;
+              duckCtx.drawImage(stamp, -drawD * 0.5, -drawD * 0.5, drawD, drawD);
+            } else if (dw.kind === "face") {
+              const R = radPx * 1.02;
+              const blink = Math.sin(time * 1.8 + dw.phase * 3.0) > -0.82 ? 1.0 : 0.18;
+              const ex = dw.eyeDist * R * 1.85;
+              const ey = -0.16 * R;
+              const er = dw.eyeSize * R * 1.75;
+
+              const mouthType = Math.sin(time * 2.4 + dw.phase * 3.0);
+              const mw = R * 0.46;
+              const my = R * 0.22;
+              const ctrlY = my + mouthType * R * 0.30;
+
+              duckCtx.lineCap = "round";
+              duckCtx.strokeStyle = "rgba(10, 14, 42, 0.78)";
+              duckCtx.lineWidth = Math.max(2.6, R * 0.12);
+              duckCtx.beginPath();
+              duckCtx.moveTo(-mw, my);
+              duckCtx.quadraticCurveTo(0, ctrlY, mw, my);
+              duckCtx.stroke();
+
+              duckCtx.fillStyle = "rgba(10, 14, 42, 0.78)";
+              duckCtx.beginPath();
+              duckCtx.ellipse(-ex, ey, er + 1.1, er * blink + 1.1, 0, 0, TAU);
+              duckCtx.ellipse(ex, ey, er + 1.1, er * blink + 1.1, 0, 0, TAU);
+              duckCtx.fill();
+
+              duckCtx.shadowColor = dw.colorGlow;
+              duckCtx.shadowBlur = 2.5;
+              duckCtx.strokeStyle = dw.colorMain;
+              duckCtx.lineWidth = Math.max(1.5, R * 0.065);
+              duckCtx.beginPath();
+              duckCtx.moveTo(-mw, my);
+              duckCtx.quadraticCurveTo(0, ctrlY, mw, my);
+              duckCtx.stroke();
+
+              duckCtx.fillStyle = "#ffffff";
+              duckCtx.beginPath();
+              duckCtx.ellipse(-ex, ey, er, er * blink, 0, 0, TAU);
+              duckCtx.ellipse(ex, ey, er, er * blink, 0, 0, TAU);
+              duckCtx.fill();
+
+              const tag = emotionTags[dw.stampIdx % emotionTags.length];
+              duckCtx.font = `500 ${Math.max(10, Math.floor(R * 0.56))}px "Instrument Serif", Georgia, serif`;
+              duckCtx.textAlign = "center";
+              duckCtx.textBaseline = "middle";
+              duckCtx.shadowBlur = 0;
+              duckCtx.lineWidth = 2.0;
+              duckCtx.strokeStyle = "rgba(10, 14, 42, 0.78)";
+              duckCtx.strokeText(tag, R * 0.92, -R * 0.52);
+              duckCtx.fillStyle = dw.colorMain;
+              duckCtx.fillText(tag, R * 0.92, -R * 0.52);
+            } else if (dw.kind === "letter") {
+              const stamp = getStamp(dw.ch, dw.styleIdx);
+              const drawD = radPx * 2.15;
+              duckCtx.drawImage(stamp, -drawD * 0.5, -drawD * 0.5, drawD, drawD);
+            }
+
+            duckCtx.restore();
+          }
+
+          lcGl.activeTexture(lcGl.TEXTURE1);
+          lcGl.bindTexture(lcGl.TEXTURE_2D, duckweedTex);
+          lcGl.pixelStorei(lcGl.UNPACK_FLIP_Y_WEBGL, false);
+          lcGl.texSubImage2D(lcGl.TEXTURE_2D, 0, 0, 0, lcGl.RGBA, lcGl.UNSIGNED_BYTE, duckweedCanvas);
+          lcGl.generateMipmap(lcGl.TEXTURE_2D);
+        }
+
+        function isOccludedByFountain(px, py, pz, roX, roY, roZ) {
+          const dx = px - roX, dy = py - roY, dz = pz - roZ;
+          const lenXZ2 = dx * dx + dz * dz;
+          if (lenXZ2 < 0.0001) return false;
+
+          const tClosest = -(roX * dx + roZ * dz) / lenXZ2;
+          if (tClosest > 0.05 && tClosest < 0.94) {
+            const cy = roY + dy * tClosest;
+            const cx = roX + dx * tClosest;
+            const cz = roZ + dz * tClosest;
+            const rClosest = Math.hypot(cx, cz);
+            const pillarR = cy < 1.04 ? 0.23 : 0.12;
+            if (cy > 0.35 && cy < 2.22 && rClosest < pillarR) return true;
+          }
+
+          if (Math.abs(dy) > 0.001) {
+            const tUpper = (UPPER_Y - 0.05 - roY) / dy;
+            if (tUpper > 0.05 && tUpper < 0.94) {
+              const rHit = Math.hypot(roX + dx * tUpper, roZ + dz * tUpper);
+              if (rHit < UPPER_R * 0.95) return true;
+            }
+            const tLower = (LOWER_Y - 0.06 - roY) / dy;
+            if (tLower > 0.05 && tLower < 0.94) {
+              const rHit = Math.hypot(roX + dx * tLower, roZ + dz * tLower);
+              if (rHit < LOWER_R * 0.95) return true;
+            }
+          }
+          return false;
+        }
+
+        function resizeLC() {
+          const rect = container.getBoundingClientRect();
+          width = Math.max(320, Math.floor(rect.width || window.innerWidth));
+          height = Math.max(240, Math.floor(rect.height || window.innerHeight));
+          const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+
+          [backCanvas, frontCanvas].forEach((cvs) => {
+            cvs.width = Math.floor(width * dpr);
+            cvs.height = Math.floor(height * dpr);
+          });
+          backCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          frontCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+          const glDpr = Math.min(window.devicePixelRatio || 1, 1.6);
+          lcGlCanvas.width = Math.floor(width * glDpr);
+          lcGlCanvas.height = Math.floor(height * glDpr);
+
+          bgStreams.length = 0;
+          const cols = Math.min(52, Math.floor(width / 24));
+          for (let i = 0; i < cols; i++) {
+            const layer = i % 3;
+            const count = 9 + (i % 5);
+            const fixedGlyphs = [];
+            for (let c = 0; c < count; c++) {
+              fixedGlyphs.push(bgChars[(i * 7 + c * 3) % bgChars.length]);
+            }
+            bgStreams.push({
+              x: (i + 0.5) * (width / cols),
+              y: Math.random() * height,
+              count,
+              fixedGlyphs,
+              spacing: 18,
+              speed: 0.85 + Math.random() * 0.9,
+              alpha: layer === 0 ? 0.52 : layer === 1 ? 0.38 : 0.28,
+              size: layer === 0 ? 12.0 : 10.8,
+              maxY: height * 0.92,
+              styleIdx: i % 2 === 0 ? 5 : 6
+            });
+          }
+
+          if (nozzles.length === 0) {
+            initNozzles();
+          }
+        }
+
+        function renderLCOverlay(dt, stageOffsetX, stageOffsetY) {
+          backCtx.clearRect(0, 0, width, height);
+          frontCtx.clearRect(0, 0, width, height);
+
+          for (let i = 0; i < bgStreams.length; i++) {
+            const bs = bgStreams[i];
+            bs.y += bs.speed;
+            const totalLen = bs.count * bs.spacing;
+            if (bs.y - totalLen > bs.maxY) bs.y = -Math.random() * height * 0.25;
+
+            const drawW = bs.size * 1.75;
+            for (let c = 0; c < bs.count; c++) {
+              const yPos = bs.y - c * bs.spacing;
+              if (yPos < -10 || yPos > bs.maxY) continue;
+              const alpha = bs.alpha * (1 - (c / bs.count) * 0.55);
+              const ch = bs.fixedGlyphs[c];
+              const stamp = getStamp(ch, bs.styleIdx);
+              backCtx.globalAlpha = alpha;
+              backCtx.drawImage(stamp, bs.x - drawW * 0.5, yPos - drawW * 0.5, drawW, drawW);
+            }
+          }
+
+          const ang = lcState.camAng;
+          const camH = lcState.camHeight;
+          const dist = lcState.cameraDist;
+          const roX = dist * Math.cos(ang);
+          const roY = camH;
+          const roZ = dist * Math.sin(ang);
+
+          let zx = lcState.lookAt[0] - roX, zy = lcState.lookAt[1] - roY, zz = lcState.lookAt[2] - roZ;
+          const zLen = Math.hypot(zx, zy, zz) || 1;
+          zx /= zLen; zy /= zLen; zz /= zLen;
+
+          let xx = -zz, xy = 0, xz = zx;
+          const xLen = Math.hypot(xx, xy, xz) || 1;
+          xx /= xLen; xz /= xLen;
+
+          const yx = xy * zz - xz * zy;
+          const yy = xz * zx - xx * zz;
+          const yz = xx * zy - xy * zx;
+
+          const minDim = Math.min(width, height);
+          const pitchSquash = Math.max(0.32, Math.min(0.88, Math.abs(zy) + 0.14));
+          const sizeScale = lcState.fontSizeScale;
+          const focal = lcState.focal;
+
+          function project3D(wx, wy, wz) {
+            const rx = wx - roX, ry = wy - roY, rz = wz - roZ;
+            const cz = rx * zx + ry * zy + rz * zz;
+            if (cz <= 0.2) return null;
+            const cx = rx * xx + ry * xy + rz * xz;
+            const cy = rx * yx + ry * yy + rz * yz;
+
+            const uvX = (cx / cz) * focal + stageOffsetX;
+            const uvY = (cy / cz) * focal + stageOffsetY;
+
+            return {
+              sx: 0.5 * (uvX * minDim + width),
+              sy: 0.5 * (height - uvY * minDim),
+              cz,
+              scale: (focal * minDim) / (cz * 680)
+            };
+          }
+
+          frontCtx.save();
+          frontCtx.globalCompositeOperation = "screen";
+          for (let i = impactRings.length - 1; i >= 0; i--) {
+            const ir = impactRings[i];
+            ir.r += dt * 0.55;
+            ir.alpha *= 0.89;
+            if (ir.alpha < 0.02 || ir.r > ir.maxR) {
+              impactRings.splice(i, 1);
+              continue;
+            }
+            const proj = project3D(ir.x, ir.y, ir.z);
+            if (!proj) continue;
+            const rx = Math.max(4, ir.r * proj.scale * 115);
+            const ry = rx * pitchSquash;
+            frontCtx.save();
+            frontCtx.translate(proj.sx, proj.sy);
+            frontCtx.scale(1, ry / rx);
+            const grad = frontCtx.createRadialGradient(0, 0, 0, 0, 0, rx);
+            const rgb = ir.styleIdx === 2 ? "255, 195, 242" : "175, 232, 255";
+            grad.addColorStop(0, `rgba(${rgb}, ${ir.alpha * 0.28})`);
+            grad.addColorStop(1, `rgba(${rgb}, 0)`);
+            frontCtx.fillStyle = grad;
+            frontCtx.beginPath();
+            frontCtx.arc(0, 0, rx, 0, TAU);
+            frontCtx.fill();
+            frontCtx.restore();
+          }
+          frontCtx.restore();
+
+          const renderQueue = [];
+          for (let i = 0; i < travelers.length; i++) {
+            const p = travelers[i];
+            const proj = project3D(p.x, p.y, p.z);
+            if (!proj || proj.sx < -40 || proj.sx > width + 40 || proj.sy < -40 || proj.sy > height + 40) {
+              continue;
+            }
+            renderQueue.push({ p, proj });
+          }
+          renderQueue.sort((a, b) => b.proj.cz - a.proj.cz);
+
+          for (let i = 0; i < renderQueue.length; i++) {
+            const { p, proj } = renderQueue[i];
+            const occluded = isOccludedByFountain(p.x, p.y, p.z, roX, roY, roZ);
+            const fadeIn = Math.min(1.0, p.age / 0.04);
+            const alpha = (occluded ? 0.22 : 0.96) * fadeIn;
+
+            const stamp = getStamp(p.ch, p.styleIdx);
+            // Gently compress extreme telephoto magnification so close-up letters stay crisp and unintrusive
+            const dampedScale = proj.scale / (1.0 + Math.max(0.0, proj.scale - 1.25) * 0.45);
+            const drawW = p.size * sizeScale * dampedScale * 1.85;
+            const squash = p.squashTimer > 0 ? (p.squashTimer / 0.15) * 0.38 : 0;
+
+            frontCtx.save();
+            frontCtx.globalAlpha = alpha;
+            frontCtx.translate(proj.sx, proj.sy);
+
+            if (!p.bouncedInStage) {
+              const nextProj = project3D(p.x + p.vx * 0.03, p.y + p.vy * 0.03, p.z + p.vz * 0.03);
+              let tangentAng = 0;
+              if (nextProj) {
+                let rawAng = Math.atan2(nextProj.sy - proj.sy, nextProj.sx - proj.sx);
+                if (rawAng > Math.PI * 0.5) rawAng -= Math.PI;
+                if (rawAng < -Math.PI * 0.5) rawAng += Math.PI;
+                tangentAng = rawAng * 0.42;
+              }
+              frontCtx.rotate(tangentAng);
+            } else {
+              frontCtx.rotate(p.spin);
+              frontCtx.scale(1.0 + squash, 1.0 - squash * 0.6);
+            }
+
+            frontCtx.drawImage(stamp, -drawW * 0.5, -drawW * 0.5, drawW, drawW);
+            frontCtx.restore();
+          }
+
+          backCtx.globalAlpha = 1;
+          frontCtx.globalAlpha = 1;
+        }
+
+        let lcFrameCount = 0;
+        let lcSimTime = 0;
+
+        function prewarmWaveAndParticles() {
+          const dtStep = 0.02;
+          for (let s = 0; s < 24; s++) {
+            lcSimTime += dtStep * lcState.flowSpeed;
+            stepFluidAndDuckweedPhysics(dtStep, lcSimTime, lcSimTime);
+
+            const readFBO = waveFBOs[pingPongIdx];
+            const writeFBO = waveFBOs[1 - pingPongIdx];
+            lcGl.bindFramebuffer(lcGl.FRAMEBUFFER, writeFBO.fbo);
+            lcGl.viewport(0, 0, SIM_SIZE, SIM_SIZE);
+            lcGl.disable(lcGl.BLEND);
+            lcGl.useProgram(bufferAProg);
+            lcGl.activeTexture(lcGl.TEXTURE0);
+            lcGl.bindTexture(lcGl.TEXTURE_2D, readFBO.tex);
+            lcGl.uniform1i(bufUniforms.iChannel0, 0);
+            lcGl.uniform3f(bufUniforms.iResolution, SIM_SIZE, SIM_SIZE, 1.0);
+            lcGl.uniform1f(bufUniforms.iTime, lcSimTime);
+            lcGl.uniform1f(bufUniforms.iTimeDelta, dtStep * lcState.flowSpeed);
+            lcGl.uniform1i(bufUniforms.iFrame, lcFrameCount);
+            lcGl.bindBuffer(lcGl.ARRAY_BUFFER, quadBuf);
+            const aPosBuf = lcGl.getAttribLocation(bufferAProg, "aPosition");
+            lcGl.enableVertexAttribArray(aPosBuf);
+            lcGl.vertexAttribPointer(aPosBuf, 2, lcGl.FLOAT, false, 0, 0);
+            lcGl.drawArrays(lcGl.TRIANGLES, 0, 6);
+            pingPongIdx = 1 - pingPongIdx;
+            lcFrameCount++;
+          }
+          lcGl.bindFramebuffer(lcGl.FRAMEBUFFER, null);
+        }
+
+        function renderStep(timeSec, dt) {
+          if (lcGlCanvas.width < 10 || lcGlCanvas.height < 10) {
+            resizeLC();
+          }
+
+          lcSimTime += dt * lcState.flowSpeed;
+
+          const curChap = LC_CAMERA_CHAPTERS[lcState.chapterIdx];
+          lcState.chapterTimer += dt;
+          if (lcState.chapterTimer >= (curChap.duration || 7.2)) {
+            applyLCChapter(lcState.chapterIdx + 1);
+          }
+
+          const activeChap = LC_CAMERA_CHAPTERS[lcState.chapterIdx];
+          lcState.camAng += dt * activeChap.angSpeed;
+
+          const camDamp = 1.0 - Math.exp(-1.55 * dt);
+          const breathH = Math.sin(timeSec * 0.45) * 0.05;
+          const breathDist = Math.cos(timeSec * 0.38) * 0.06;
+
+          lcState.camHeight += (lcState.targetHeight + breathH - lcState.camHeight) * camDamp;
+          lcState.cameraDist += (lcState.targetDist + breathDist - lcState.cameraDist) * camDamp;
+          lcState.focal += (lcState.targetFocal - lcState.focal) * camDamp;
+          lcState.rFocus += (lcState.targetRFocus - lcState.rFocus) * camDamp;
+          lcState.yFocus += (lcState.targetYFocus - lcState.yFocus) * camDamp;
+          lcState.sideAng += (lcState.targetSideAng - lcState.sideAng) * camDamp;
+
+          const focusAng = lcState.camAng + lcState.sideAng;
+          lcState.lookAt[0] = lcState.rFocus * Math.cos(focusAng);
+          lcState.lookAt[1] = lcState.yFocus;
+          lcState.lookAt[2] = lcState.rFocus * Math.sin(focusAng);
+
+          lcState.panX += (lcState.targetPanX - lcState.panX) * camDamp;
+          lcState.panY += (lcState.targetPanY - lcState.panY) * camDamp;
+          lcState.surgeGlow = Math.max(0, lcState.surgeGlow - dt * 0.6);
+
+          stepFluidAndDuckweedPhysics(dt, timeSec, lcSimTime);
+          renderDuckweedSurfaceTexture(timeSec);
+
+          const readFBO = waveFBOs[pingPongIdx];
+          const writeFBO = waveFBOs[1 - pingPongIdx];
+
+          lcGl.bindFramebuffer(lcGl.FRAMEBUFFER, writeFBO.fbo);
+          lcGl.viewport(0, 0, SIM_SIZE, SIM_SIZE);
+          lcGl.disable(lcGl.BLEND);
+          lcGl.useProgram(bufferAProg);
+
+          lcGl.activeTexture(lcGl.TEXTURE0);
+          lcGl.bindTexture(lcGl.TEXTURE_2D, readFBO.tex);
+          lcGl.uniform1i(bufUniforms.iChannel0, 0);
+          lcGl.uniform3f(bufUniforms.iResolution, SIM_SIZE, SIM_SIZE, 1.0);
+          lcGl.uniform1f(bufUniforms.iTime, lcSimTime);
+          lcGl.uniform1f(bufUniforms.iTimeDelta, dt * lcState.flowSpeed);
+          lcGl.uniform1i(bufUniforms.iFrame, lcFrameCount);
+
+          lcGl.bindBuffer(lcGl.ARRAY_BUFFER, quadBuf);
+          const aPosBuf = lcGl.getAttribLocation(bufferAProg, "aPosition");
+          lcGl.enableVertexAttribArray(aPosBuf);
+          lcGl.vertexAttribPointer(aPosBuf, 2, lcGl.FLOAT, false, 0, 0);
+          lcGl.drawArrays(lcGl.TRIANGLES, 0, 6);
+
+          pingPongIdx = 1 - pingPongIdx;
+          lcFrameCount++;
+
+          lcGl.bindFramebuffer(lcGl.FRAMEBUFFER, null);
+          lcGl.viewport(0, 0, lcGlCanvas.width, lcGlCanvas.height);
+          lcGl.enable(lcGl.BLEND);
+          lcGl.clearColor(0, 0, 0, 0);
+          lcGl.clear(lcGl.COLOR_BUFFER_BIT);
+
+          lcGl.useProgram(imageProg);
+          lcGl.activeTexture(lcGl.TEXTURE0);
+          lcGl.bindTexture(lcGl.TEXTURE_2D, writeFBO.tex);
+          lcGl.uniform1i(imgUniforms.iChannel0, 0);
+
+          lcGl.activeTexture(lcGl.TEXTURE1);
+          lcGl.bindTexture(lcGl.TEXTURE_2D, duckweedTex);
+          lcGl.uniform1i(imgUniforms.uDuckweedTex, 1);
+          lcGl.uniform4fv(imgUniforms.uLilyPads, lilyPadUniformData);
+
+          lcGl.uniform3f(imgUniforms.iResolution, lcGlCanvas.width, lcGlCanvas.height, 1.0);
+          lcGl.uniform1f(imgUniforms.iTime, timeSec);
+          lcGl.uniform1f(imgUniforms.uSimTime, lcSimTime);
+          lcGl.uniform2f(imgUniforms.uCameraAngles, lcState.camAng, lcState.camHeight);
+          lcGl.uniform3f(imgUniforms.uLookAt, lcState.lookAt[0], lcState.lookAt[1], lcState.lookAt[2]);
+          lcGl.uniform1f(imgUniforms.uCameraDist, lcState.cameraDist);
+          lcGl.uniform1f(imgUniforms.uFocal, lcState.focal);
+          lcGl.uniform2f(imgUniforms.uStageOffset, lcState.panX, lcState.panY);
+          lcGl.uniform1f(imgUniforms.uGrassRadius, lcState.grassRadius);
+          lcGl.uniform1f(imgUniforms.uLavenderTint, lcState.lavenderTint);
+          lcGl.uniform1f(imgUniforms.uSurgeGlow, lcState.surgeGlow);
+
+          lcGl.bindBuffer(lcGl.ARRAY_BUFFER, quadBuf);
+          const aPosImg = lcGl.getAttribLocation(imageProg, "aPosition");
+          lcGl.enableVertexAttribArray(aPosImg);
+          lcGl.vertexAttribPointer(aPosImg, 2, lcGl.FLOAT, false, 0, 0);
+          lcGl.drawArrays(lcGl.TRIANGLES, 0, 6);
+
+          renderLCOverlay(dt, lcState.panX, lcState.panY);
+        }
+
+        resizeLC();
+        prewarmWaveAndParticles();
+        applyLCChapter(0, true);
+        window.addEventListener("resize", resizeLC);
+
+        return { renderStep, resize: resizeLC };
+      }
+
+      // ==================== 3. Application Bootstrap ====================
+      window.addEventListener("load", () => {
+        const fountainJelly = createJellyDialogBox(
+          "lcJellyCanvas",
+          "The Fountain",
+          [
+            "Words rise from the carved stone fountain and drift softly into the water below."
+          ],
+          { boxHalfW: 1.65, boxHalfH: 0.305, tabHalfH: 0.088, tabRad: 0.082 }
+        );
+
+        const fountainApp = initLavenderCourtSubpage(fountainJelly);
+        let lastTime = performance.now();
+
+        function tick(now) {
+          const dt = Math.min(0.05, Math.max(0.001, (now - lastTime) * 0.001));
+          lastTime = now;
+          const timeSec = now * 0.001;
+
+          if (fountainApp) {
+            fountainApp.renderStep(timeSec, dt);
+          }
+          if (fountainJelly) {
+            fountainJelly.render(timeSec);
+          }
+          requestAnimationFrame(tick);
+        }
+
+        requestAnimationFrame(tick);
+      });
+    </script>
+  </body>
+</html>

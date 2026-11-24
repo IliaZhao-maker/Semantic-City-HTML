@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>About · Semantic Waste City</title>
+    <link rel="icon" href="data:," />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Noto+Serif+SC:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600&family=Syne:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        --font-serif: "Instrument Serif", Georgia, serif;
+        --font-zh-serif: "Noto Serif SC", "Songti SC", "STSong", serif;
+        --font-sans: "Plus Jakarta Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
+        --font-mono: "IBM Plex Mono", Consolas, monospace;
+        --ink-bright: rgba(255, 255, 255, 0.97);
+        --ink-body: rgba(244, 246, 252, 0.91);
+        --ink-muted: rgba(226, 232, 245, 0.72);
+        --glass-border: rgba(255, 255, 255, 0.36);
+        --hairline: rgba(255, 255, 255, 0.24);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        color: var(--ink-bright);
+        font-family: var(--font-sans);
+        -webkit-font-smoothing: antialiased;
+        /* Standalone fallback: mirrors Home's Backlit Lighthouse twilight sky, champagne horizon mist & deep nocturnal sea */
+        background:
+          radial-gradient(ellipse 68% 52% at 52% 18%, rgba(196, 178, 170, 0.26) 0%, transparent 68%),
+          radial-gradient(circle at 18% 78%, rgba(235, 134, 62, 0.16) 0%, transparent 46%),
+          radial-gradient(circle at 82% 28%, rgba(132, 198, 224, 0.18) 0%, transparent 50%),
+          radial-gradient(circle at 76% 82%, rgba(216, 152, 204, 0.14) 0%, transparent 48%),
+          linear-gradient(180deg, #4b5575 0%, #5e5a6b 34%, #3c4257 68%, #22293a 100%);
+      }
+
+      /* When embedded inside Home's frosted glass iframe, stay translucent so the live 3D island shines through */
+      body.is-embedded {
+        background:
+          radial-gradient(ellipse 74% 58% at 50% 16%, rgba(255, 238, 224, 0.08) 0%, transparent 66%),
+          radial-gradient(circle at 16% 82%, rgba(245, 146, 72, 0.10) 0%, transparent 48%),
+          radial-gradient(circle at 84% 26%, rgba(125, 211, 252, 0.09) 0%, transparent 48%),
+          linear-gradient(160deg, rgba(24, 30, 48, 0.34) 0%, rgba(18, 24, 40, 0.44) 100%);
+      }
+
+      #atmosphereCanvas {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 0;
+      }
+
+      /* Subtle architectural corner registration ticks echoing the Home poster emblem */
+      .frame-ticks {
+        position: fixed;
+        inset: 14px;
+        pointer-events: none;
+        z-index: 1;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+      }
+
+      .frame-ticks::before,
+      .frame-ticks::after {
+        content: "";
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        border-color: rgba(255, 255, 255, 0.52);
+        border-style: solid;
+      }
+
+      .frame-ticks::before {
+        top: -1px;
+        left: -1px;
+        border-width: 1.5px 0 0 1.5px;
+      }
+
+      .frame-ticks::after {
+        bottom: -1px;
+        right: -1px;
+        border-width: 0 1.5px 1.5px 0;
+      }
+
+      .about-scroll {
+        position: relative;
+        z-index: 2;
+        width: 100%;
+        height: 100%;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: clamp(24px, 4.8vh, 44px) clamp(28px, 6vw, 68px) clamp(26px, 4.8vh, 46px);
+        display: flex;
+        flex-direction: column;
+      }
+
+      .about-scroll::-webkit-scrollbar {
+        width: 5px;
+      }
+
+      .about-scroll::-webkit-scrollbar-track {
+        background: rgba(15, 22, 38, 0.25);
+      }
+
+      .about-scroll::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.32);
+      }
+
+      .about-inner {
+        width: 100%;
+        max-width: 740px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+      }
+
+      .editorial-head {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        margin-bottom: clamp(22px, 4.4vh, 40px);
+      }
+
+      /* Frosted crystal-glass language switch matching Home's top navbar buttons */
+      .lang-switch {
+        display: inline-flex;
+        background: linear-gradient(145deg, rgba(255, 255, 255, 0.20) 0%, rgba(235, 238, 248, 0.08) 100%);
+        border: 1px solid var(--glass-border);
+        backdrop-filter: blur(18px) saturate(135%);
+        -webkit-backdrop-filter: blur(18px) saturate(135%);
+      }
+
+      .lang-btn {
+        border: none;
+        background: transparent;
+        color: var(--ink-muted);
+        font-family: var(--font-mono);
+        font-size: 10.5px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        padding: 6px 13px;
+        cursor: pointer;
+        transition: background 200ms ease, color 200ms ease;
+      }
+
+      .lang-btn + .lang-btn {
+        border-left: 1px solid rgba(255, 255, 255, 0.20);
+      }
+
+      .lang-btn:hover {
+        color: #ffffff;
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      .lang-btn.is-active {
+        background: linear-gradient(145deg, rgba(255, 255, 255, 0.34) 0%, rgba(244, 224, 238, 0.22) 100%);
+        color: #ffffff;
+      }
+
+      .content-stage {
+        margin: auto 0;
+        padding-bottom: clamp(8px, 2vh, 20px);
+      }
+
+      .prose-block {
+        display: flex;
+        flex-direction: column;
+        gap: clamp(16px, 2.8vh, 25px);
+      }
+
+      .copy-en {
+        margin: 0;
+        font-family: var(--font-serif);
+        font-size: clamp(18.5px, 2.15vw, 22.5px);
+        font-weight: 400;
+        line-height: 1.54;
+        letter-spacing: 0.012em;
+        color: var(--ink-body);
+        text-shadow: 0 2px 16px rgba(14, 20, 36, 0.48);
+      }
+
+      .copy-zh {
+        margin: 0;
+        font-family: var(--font-sans);
+        font-size: clamp(14.5px, 1.65vw, 16.5px);
+        font-weight: 400;
+        line-height: 1.94;
+        letter-spacing: 0.045em;
+        color: var(--ink-body);
+        text-shadow: 0 2px 16px rgba(14, 20, 36, 0.52);
+      }
+
+      body[data-lang="en"] .lang-zh {
+        display: none;
+      }
+
+      body[data-lang="zh"] .lang-en {
+        display: none;
+      }
+
+      /* Closing poetic coda with generous breathing room & soft moonlit-opal glow */
+      .coda-section {
+        position: relative;
+        margin-top: clamp(34px, 6.8vh, 66px);
+        padding-top: clamp(26px, 4.8vh, 44px);
+        border-top: 1px solid var(--hairline);
+      }
+
+      .coda-section::before {
+        content: "";
+        position: absolute;
+        top: -2px;
+        left: 0;
+        width: 44px;
+        height: 3px;
+        background: linear-gradient(90deg, rgba(255, 224, 196, 0.85), rgba(167, 218, 208, 0.55), transparent);
+      }
+
+      .coda-en {
+        margin: 0;
+        font-family: var(--font-serif);
+        font-style: italic;
+        font-size: clamp(25px, 3.4vw, 37px);
+        font-weight: 400;
+        line-height: 1.28;
+        letter-spacing: 0.012em;
+        color: #ffffff;
+        text-shadow: 0 2px 24px rgba(244, 194, 220, 0.28), 0 2px 14px rgba(14, 20, 36, 0.52);
+      }
+
+      .coda-zh {
+        margin: 0;
+        font-family: var(--font-zh-serif);
+        font-size: clamp(20px, 2.6vw, 27px);
+        font-weight: 400;
+        line-height: 1.78;
+        letter-spacing: 0.12em;
+        color: #ffffff;
+        text-shadow: 0 2px 24px rgba(244, 194, 220, 0.26), 0 2px 14px rgba(14, 20, 36, 0.52);
+      }
+
+      @media (max-width: 640px) {
+        .frame-ticks {
+          inset: 8px;
+        }
+        .about-scroll {
+          padding: 18px 20px 24px;
+        }
+      }
+    </style>
+  </head>
+  <body data-lang="en">
+    <canvas id="atmosphereCanvas" aria-hidden="true"></canvas>
+    <div class="frame-ticks" aria-hidden="true"></div>
+
+    <main class="about-scroll">
+      <article class="about-inner">
+        <header class="editorial-head">
+          <div class="lang-switch" role="group" aria-label="Language switch">
+            <button type="button" class="lang-btn is-active" data-set-lang="en">EN</button>
+            <button type="button" class="lang-btn" data-set-lang="zh">中文</button>
+          </div>
+        </header>
+
+        <div class="content-stage">
+          <!-- English View (Default) -->
+          <div class="lang-en">
+            <section class="prose-block" aria-label="Exhibition statement">
+              <p class="copy-en">
+                The words we use each day are drifting beyond their first definitions. Through online exchanges, shared emotions, and algorithmic generation, they are repeated, borrowed, misread—and made meaningful anew.
+              </p>
+              <p class="copy-en">
+                Here, fragments of meaning take on living forms. Beginning as drifting embryos, they glow, divide, or turn translucent through human dialogue, settling into a garden of coexistence and continual growth.
+              </p>
+              <p class="copy-en">
+                You are not merely a witness to meaning. Every sentence you offer may shape what it becomes.
+              </p>
+            </section>
+
+            <footer class="coda-section" aria-label="Closing question">
+              <p class="coda-en">
+                Does a word end at its definition,<br />
+                or begin again with its next use?
+              </p>
+            </footer>
+          </div>
+
+          <!-- Chinese View (Toggled) -->
+          <div class="lang-zh">
+            <section class="prose-block" aria-label="展览阐述">
+              <p class="copy-zh">
+                我们每天使用的词语，正在离开它们最初的解释。在网络交流、集体情绪与算法生成中，它们被重复、借用、误读，也不断获得新的意义。
+              </p>
+              <p class="copy-zh">
+                在这里，意义的碎片被想象为新的生命：从漂浮的幼体出发，在对话中发光、分裂或逐渐透明，汇入一座彼此共存、持续生长的花园。
+              </p>
+              <p class="copy-zh">
+                你不是意义的旁观者。你输入的每一句话，都可能改变它的下一种形态。
+              </p>
+            </section>
+
+            <footer class="coda-section" aria-label="结尾思考">
+              <p class="coda-zh">
+                一个词的边界，止于解释，<br />
+                还是始于下一次使用？
+              </p>
+            </footer>
+          </div>
+        </div>
+      </article>
+    </main>
+
+    <script>
+      // Detect iframe embedding inside index.html so the live 3D island glows through the frosted glass
+      try {
+        if (window.self !== window.top && window.frameElement) {
+          document.body.classList.add("is-embedded");
+        }
+      } catch (e) {
+        // Cross-origin iframe (such as standalone preview) keeps the full twilight atmosphere
+      }
+
+      document.querySelectorAll(".lang-btn[data-set-lang]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const mode = btn.dataset.setLang;
+          document.body.dataset.lang = mode;
+          document.documentElement.lang = mode === "zh" ? "zh-CN" : "en";
+          document.querySelectorAll(".lang-btn").forEach((b) => {
+            b.classList.toggle("is-active", b === btn);
+          });
+        });
+      });
+
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && window.parent !== window) {
+          window.parent.postMessage({ type: "CLOSE_SUBPAGE" }, "*");
+        }
+      });
+
+      // Home-matched nocturnal atmosphere: soft backlit mist blooms, faint orbital filigree ring & bioluminescent spores
+      (function initHomeAtmosphere() {
+        const cvs = document.getElementById("atmosphereCanvas");
+        if (!cvs) return;
+        const ctx = cvs.getContext("2d");
+        let w = 0;
+        let h = 0;
+        let mx = 0.5;
+        let my = 0.5;
+        let tx = 0.5;
+        let ty = 0.5;
+
+        const orbs = [
+          { bx: 0.18, by: 0.78, r: 0.34, col: "242, 148, 72",  a: 0.14, sp: 0.28, ph: 0.4 }, // Warm amber mushroom underglow
+          { bx: 0.80, by: 0.24, r: 0.38, col: "138, 198, 228", a: 0.15, sp: 0.22, ph: 2.1 }, // Astral powder-blue aura
+          { bx: 0.72, by: 0.76, r: 0.32, col: "218, 162, 212", a: 0.12, sp: 0.25, ph: 4.0 }, // Periwinkle orchid blush
+          { bx: 0.46, by: 0.18, r: 0.42, col: "238, 214, 192", a: 0.11, sp: 0.18, ph: 1.2 }  // Backlit champagne mist
+        ];
+
+        const spores = Array.from({ length: 28 }, (_, i) => ({
+          x: Math.random(),
+          y: Math.random(),
+          r: 0.9 + (i % 3) * 0.8,
+          vx: (Math.random() - 0.5) * 0.00014,
+          vy: -0.00010 - Math.random() * 0.00018,
+          phase: Math.random() * Math.PI * 2,
+          hue: i % 3 === 0 ? "252, 196, 134" : i % 3 === 1 ? "164, 224, 238" : "242, 192, 226"
+        }));
+
+        window.addEventListener("pointermove", (e) => {
+          tx = e.clientX / Math.max(1, w);
+          ty = e.clientY / Math.max(1, h);
+        });
+
+        function resize() {
+          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+          w = window.innerWidth;
+          h = window.innerHeight;
+          cvs.width = Math.floor(w * dpr);
+          cvs.height = Math.floor(h * dpr);
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+
+        function tick(now) {
+          const t = now * 0.001;
+          mx += (tx - mx) * 0.03;
+          my += (ty - my) * 0.03;
+
+          ctx.clearRect(0, 0, w, h);
+          const minDim = Math.min(w, h);
+
+          // 1. Soft breathing bioluminescent mist blooms
+          for (let i = 0; i < orbs.length; i++) {
+            const o = orbs[i];
+            const ox = (o.bx + Math.sin(t * o.sp + o.ph) * 0.04 + (mx - 0.5) * 0.035) * w;
+            const oy = (o.by + Math.cos(t * o.sp * 0.85 + o.ph) * 0.04 + (my - 0.5) * 0.035) * h;
+            const rad = o.r * Math.max(w, h);
+            const g = ctx.createRadialGradient(ox, oy, 0, ox, oy, rad);
+            g.addColorStop(0, `rgba(${o.col}, ${o.a})`);
+            g.addColorStop(0.55, `rgba(${o.col}, ${(o.a * 0.32).toFixed(4)})`);
+            g.addColorStop(1, `rgba(${o.col}, 0)`);
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, w, h);
+          }
+
+          // 2. Delicate tilted orbital filigree arc (echoing Home's Astral Orb & poster emblem)
+          ctx.save();
+          ctx.translate(w * 0.78 + (mx - 0.5) * 14, h * 0.72 + (my - 0.5) * 10);
+          ctx.rotate(-0.42 + Math.sin(t * 0.18) * 0.04);
+          ctx.strokeStyle = "rgba(255, 244, 232, 0.11)";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.ellipse(0, 0, minDim * 0.36, minDim * 0.11, 0, 0, Math.PI * 2);
+          ctx.stroke();
+
+          ctx.strokeStyle = "rgba(167, 218, 208, 0.09)";
+          ctx.beginPath();
+          ctx.ellipse(0, 0, minDim * 0.24, minDim * 0.072, 0.25, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+
+          // 3. Drifting nocturnal spores
+          for (let i = 0; i < spores.length; i++) {
+            const s = spores[i];
+            s.x = (s.x + s.vx + Math.sin(t * 0.35 + s.phase) * 0.00007 + 1) % 1;
+            s.y = (s.y + s.vy + 1) % 1;
+            const alpha = 0.18 + 0.24 * (0.5 + 0.5 * Math.sin(t * 0.85 + s.phase));
+            ctx.fillStyle = `rgba(${s.hue}, ${alpha.toFixed(3)})`;
+            ctx.beginPath();
+            ctx.arc(s.x * w, s.y * h, s.r, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          requestAnimationFrame(tick);
+        }
+
+        resize();
+        window.addEventListener("resize", resize);
+        requestAnimationFrame(tick);
+      })();
+    </script>
+  </body>
+</html>

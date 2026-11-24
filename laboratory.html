@@ -1,0 +1,5062 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Semantic Waste City | 语义废料城市</title>
+    <link rel="icon" href="data:," />
+
+    <!-- Three.js r166 模块化 CDN 映射 -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.166.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.166.0/examples/jsm/"
+        }
+      }
+    </script>
+
+    <!-- ==================== 1. 样式表（统一 Dew 露珠奶白果冻 · 全 UI 零阴影） ==================== -->
+    <style>
+      @font-face {
+        font-family: "Nightgazer";
+        src: url("./assets/fonts/nightgazer/Nightgazer14.ttf") format("truetype");
+        font-display: swap;
+      }
+
+      :root {
+        color-scheme: dark;
+        font-family: "Nightgazer", "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+        background: #b9c5ec;
+        --text: rgba(239, 252, 255, 0.94);
+        --mx: 50vw;
+        --my: 50vh;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body,
+      .app-shell {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+      }
+
+      body {
+        color: var(--text);
+        font-family: "Nightgazer", "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      }
+
+      /* 梦幻暮色兜底天空背景（本地存在 background.png 时叠加显示） */
+      .app-shell::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        background:
+          radial-gradient(circle at 22% 24%, rgba(255, 212, 244, 0.44), transparent 46%),
+          radial-gradient(circle at 78% 28%, rgba(162, 234, 255, 0.44), transparent 48%),
+          radial-gradient(circle at 50% 88%, rgba(128, 146, 214, 0.56), transparent 56%),
+          linear-gradient(180deg, #cfd6f4 0%, #b5c3eb 48%, #8ea8d6 100%);
+        pointer-events: none;
+      }
+
+      .app-shell::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        background: url("./assets/images/background.png") center / cover no-repeat;
+        opacity: 0.92;
+        pointer-events: none;
+      }
+
+      /* 后景字符雨层（纯飘落字符 + 模型背后的螺旋字链） */
+      #dataRain {
+        position: fixed;
+        inset: 0;
+        z-index: 1;
+        width: 100%;
+        height: 100%;
+        display: block;
+        pointer-events: none;
+        opacity: 0.96;
+      }
+
+      /* 3D 场景层：进入单页特写时升至画框前方 */
+      #scene {
+        position: fixed;
+        inset: 0;
+        z-index: 2;
+        width: 100%;
+        height: 100%;
+        display: block;
+        background: transparent;
+        cursor: grab;
+      }
+
+      #scene:active {
+        cursor: grabbing;
+      }
+
+      body.is-detail-mode #scene {
+        z-index: 6;
+      }
+
+      /* 前景字符环绕层 */
+      #dataFeedFront {
+        position: fixed;
+        inset: 0;
+        z-index: 3;
+        width: 100%;
+        height: 100%;
+        display: block;
+        pointer-events: none;
+        opacity: 0.96;
+      }
+
+      body.is-detail-mode #dataFeedFront {
+        z-index: 7;
+      }
+
+      .particle-glass {
+        position: fixed;
+        inset: 0;
+        z-index: 3;
+        pointer-events: none;
+        opacity: 0.14;
+        background:
+          linear-gradient(90deg, rgba(120, 230, 255, 0.08) 1px, transparent 1px),
+          linear-gradient(0deg, rgba(250, 150, 255, 0.06) 1px, transparent 1px);
+        background-size: 56px 56px;
+      }
+
+      /* 轻量化画框层（无逐帧滤镜重绘，保持 60FPS 流畅） */
+      .frame-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 4;
+        pointer-events: none;
+        overflow: hidden;
+        transform: translate3d(calc((var(--mx) - 50vw) * 0.008), calc((var(--my) - 50vh) * 0.008), 0);
+        transition: transform 220ms ease-out, opacity 420ms ease;
+        will-change: transform;
+      }
+
+      .frame-image {
+        position: absolute;
+        inset: 0;
+        background: url("./assets/images/frame.png") center / 100% 100% no-repeat;
+        opacity: 0.95;
+        animation: frameBreath 5.5s ease-in-out infinite, frameFloat 8s ease-in-out infinite;
+        will-change: transform, opacity;
+      }
+
+      .frame-shine {
+        position: absolute;
+        left: calc(var(--mx) - 23vw);
+        top: calc(var(--my) - 23vw);
+        width: 46vw;
+        height: 46vw;
+        min-width: 420px;
+        min-height: 420px;
+        border-radius: 50%;
+        background: radial-gradient(
+          circle,
+          rgba(255, 255, 255, 0.72) 0%,
+          rgba(169, 242, 255, 0.34) 22%,
+          rgba(255, 144, 242, 0.16) 40%,
+          transparent 66%
+        );
+        mix-blend-mode: screen;
+        opacity: 0.54;
+        -webkit-mask-image: url("./assets/images/frame.png");
+        mask-image: url("./assets/images/frame.png");
+        -webkit-mask-size: 100vw 100vh;
+        mask-size: 100vw 100vh;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+      }
+
+      .frame-pulse {
+        position: absolute;
+        inset: 0;
+        background: url("./assets/images/frame.png") center / 100% 100% no-repeat;
+        opacity: 0.24;
+        mix-blend-mode: screen;
+        animation: framePulse 3.8s ease-in-out infinite;
+        will-change: transform, opacity;
+      }
+
+      /* 顶部全英文循环跑马灯（无阴影） */
+      .agent-marquee {
+        position: fixed;
+        z-index: 8;
+        top: clamp(22px, 4.2vh, 48px);
+        left: 50%;
+        width: min(760px, 66vw);
+        height: 44px;
+        overflow: hidden;
+        pointer-events: none;
+        opacity: 0;
+        transform: translateX(-50%) translateY(-8px);
+        transition: opacity 420ms ease, transform 420ms ease, left 520ms ease, width 520ms ease;
+        -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+        mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+      }
+
+      .agent-marquee.is-visible {
+        opacity: 0.94;
+        transform: translateX(-50%) translateY(0);
+      }
+
+      body.is-detail-mode .agent-marquee {
+        left: 28vw;
+        width: min(500px, 44vw);
+      }
+
+      .agent-marquee span {
+        display: inline-block;
+        min-width: 100%;
+        padding-left: 100%;
+        color: rgba(246, 252, 255, 0.96);
+        font-family: "Nightgazer", "Inter", system-ui, sans-serif;
+        font-size: clamp(16px, 1.5vw, 23px);
+        line-height: 44px;
+        white-space: nowrap;
+        text-shadow: none;
+        animation: agentMarquee 17s linear infinite;
+      }
+
+      /* 全景底部极简引导提示（无阴影） */
+      .panorama-hint {
+        position: fixed;
+        z-index: 8;
+        bottom: clamp(18px, 3.6vh, 36px);
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 8px 18px;
+        border-radius: 999px;
+        background: rgba(236, 240, 255, 0.72);
+        border: 1.5px solid #ffffff;
+        color: #242f66;
+        font-size: 12.5px;
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+        pointer-events: none;
+        box-shadow: none;
+        transition: opacity 320ms ease, transform 320ms ease;
+      }
+
+      body.is-detail-mode .panorama-hint {
+        opacity: 0;
+        transform: translateX(-50%) translateY(10px);
+      }
+
+      /* 导入本地 GLB 的提示胶囊（无阴影） */
+      .glb-import-banner {
+        position: fixed;
+        z-index: 12;
+        top: clamp(72px, 10.5vh, 102px);
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 8px 16px;
+        border-radius: 999px;
+        background: rgba(236, 240, 255, 0.78);
+        border: 1.5px solid #ffffff;
+        color: #253068;
+        font-size: 12px;
+        cursor: pointer;
+        box-shadow: none;
+        transition: opacity 320ms ease, transform 320ms ease;
+        max-width: 90vw;
+        text-align: center;
+      }
+
+      .glb-import-banner.is-hidden,
+      body.is-detail-mode .glb-import-banner {
+        opacity: 0;
+        pointer-events: none;
+        transform: translateX(-50%) translateY(-8px);
+      }
+
+      /* ==================== 右侧上下分裂式 WebGL2 果冻对话框（统一 Dew 露珠奶白 · 零阴影 · 零嵌套） ==================== */
+      .control-panel {
+        position: fixed;
+        z-index: 9;
+        top: 50%;
+        right: clamp(24px, 4vw, 64px);
+        width: min(532px, 48vw);
+        overflow: visible;
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+        opacity: 0;
+        pointer-events: none;
+        transform: translate3d(32px, -50%, 0) scale(0.96);
+        transition: opacity 380ms ease, transform 420ms cubic-bezier(0.22, 1.18, 0.36, 1);
+      }
+
+      .control-panel.is-visible {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translate3d(0, -50%, 0) scale(1);
+      }
+
+      /* WebGL2 果冻画布：四周精确预留 56px（与 JS 中 PAD = 56 严格 1:1 对应） */
+      .jelly-dialog-canvas {
+        position: absolute;
+        inset: -56px;
+        width: calc(100% + 112px);
+        height: calc(100% + 112px);
+        z-index: 0;
+        pointer-events: none;
+        display: block;
+      }
+
+      /* 仅当设备不支持 WebGL2 时的干净兜底外观（无阴影） */
+      .control-panel.jelly-fallback .jelly-body-inner,
+      .control-panel.jelly-fallback .jelly-input-pod {
+        background: rgba(235, 238, 252, 0.84);
+        border: 2px solid #ffffff;
+        border-radius: 26px;
+      }
+
+      .control-panel.jelly-fallback .jelly-nameplate {
+        background: rgba(238, 240, 253, 0.9);
+        border: 2px solid #ffffff;
+        border-radius: 999px;
+      }
+
+      /* 外部顶栏：仅保留纯粹的左侧凸起铭牌，自由贴合中/英文标题长度 */
+      .jelly-top-bar {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        align-items: flex-end;
+        justify-content: flex-start;
+        padding: 0 18px 0 22px;
+        margin-bottom: -4px;
+      }
+
+      .jelly-nameplate {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        width: fit-content;
+        max-width: calc(100% - 8px);
+        padding: 9px 22px 11px;
+        border-radius: 999px;
+        user-select: none;
+      }
+
+      /* 流动彩虹铭牌文字（适配 Dew 奶白高对比配色） */
+      .jelly-nameplate b {
+        font-size: clamp(18px, 1.55vw, 23px);
+        line-height: 1.18;
+        font-weight: 700;
+        white-space: nowrap;
+        background: linear-gradient(
+          90deg,
+          #2578d4 0%,
+          #c93ea4 25%,
+          #d17d22 50%,
+          #6c4be0 75%,
+          #2578d4 100%
+        );
+        background-size: 220% 100%;
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        text-shadow: none;
+        animation: jellyRainbowText 3.4s linear infinite;
+      }
+
+      .control-panel.is-en-mode .jelly-nameplate b {
+        font-size: clamp(14.5px, 1.24vw, 18.5px);
+      }
+
+      /* 上半部分果冻本体：内部留足安全边距，外沿白边永不触碰文字 */
+      .jelly-body-inner {
+        position: relative;
+        z-index: 1;
+        padding: 20px 28px 18px;
+        max-height: 54vh;
+        overflow-y: auto;
+        border-radius: 26px;
+      }
+
+      .jelly-body-inner::-webkit-scrollbar {
+        width: 4px;
+      }
+
+      .jelly-body-inner::-webkit-scrollbar-thumb {
+        background: rgba(74, 92, 152, 0.28);
+        border-radius: 999px;
+      }
+
+      /* 收纳在果冻内部顶端的工具与状态栏 */
+      .jelly-inner-topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+
+      .jelly-live-state {
+        font-size: 11.5px;
+        font-weight: 600;
+        color: #2f5b8f;
+        white-space: nowrap;
+      }
+
+      .jelly-live-state.is-unrelated {
+        color: #a65c29;
+      }
+
+      .jelly-top-actions {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 7px;
+        flex-wrap: nowrap;
+      }
+
+      .jelly-text-action {
+        height: auto;
+        padding: 2px 3px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+        color: rgba(44, 54, 102, 0.78);
+        font-size: 11.5px;
+        letter-spacing: 0.02em;
+        cursor: pointer;
+        transition: color 160ms ease;
+      }
+
+      .jelly-text-action:hover:not(:disabled) {
+        background: transparent;
+        border-color: transparent;
+        color: #161d46;
+        transform: none;
+      }
+
+      .jelly-text-action.is-configured::before {
+        content: "";
+        display: inline-block;
+        width: 5.5px;
+        height: 5.5px;
+        margin-right: 4px;
+        border-radius: 50%;
+        vertical-align: 1px;
+        background: #14a682;
+      }
+
+      .jelly-action-sep {
+        color: rgba(46, 56, 102, 0.28);
+        font-size: 10.5px;
+        user-select: none;
+      }
+
+      #status {
+        display: none;
+      }
+
+      /* 样本切换：无框下划线文字导航 */
+      .specimen-nav-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding-bottom: 9px;
+        margin-bottom: 12px;
+        border-bottom: 1px solid rgba(58, 70, 128, 0.16);
+      }
+
+      .specimen-tabs {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex-wrap: wrap;
+      }
+
+      .specimen-tab {
+        position: relative;
+        height: auto;
+        padding: 2px 0 4px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+        color: rgba(52, 62, 112, 0.56);
+        font-size: 12.5px;
+        cursor: pointer;
+        transition: color 180ms ease;
+      }
+
+      .specimen-tab:hover:not(:disabled),
+      .specimen-tab.is-active {
+        background: transparent;
+        border-color: transparent;
+        color: #1c2452;
+        transform: none;
+      }
+
+      .specimen-tab.is-active::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: -2px;
+        height: 2px;
+        border-radius: 2px;
+        background: linear-gradient(90deg, #4fa4e8, #d26bc8);
+      }
+
+      .chat-log {
+        padding: 0;
+        margin: 0;
+        border: 0;
+        background: transparent;
+        color: rgba(31, 39, 82, 0.94);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .subject-story-list {
+        display: grid;
+        gap: 6px;
+        margin-bottom: 10px;
+      }
+
+      .subject-story-item {
+        margin: 0;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        align-items: baseline;
+        gap: 10px;
+      }
+
+      .subject-story-item span {
+        color: rgba(74, 88, 152, 0.82);
+        font-size: 11.5px;
+        white-space: nowrap;
+      }
+
+      .subject-story-item b,
+      .subject-story-item em {
+        font-style: normal;
+        font-weight: normal;
+        color: rgba(31, 39, 82, 0.94);
+        font-size: 12.5px;
+        line-height: 1.46;
+      }
+
+      /* 纯粹无框对话排印（无嵌套边框、无竖条、无技术角标） */
+      .ai-verdict-box {
+        margin: 12px 0 10px;
+        padding: 2px 0;
+        border: 0;
+        background: transparent;
+      }
+
+      .ai-verdict-box.is-idle .ai-verdict-head {
+        display: none;
+      }
+
+      .ai-verdict-head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 5px;
+      }
+
+      .verdict-badge {
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        color: #2f5b8f;
+      }
+
+      .verdict-badge::before {
+        content: "✧";
+        margin-right: 6px;
+        opacity: 0.85;
+      }
+
+      .ai-verdict-box.mode-original .verdict-badge {
+        color: #16789c;
+      }
+
+      .ai-verdict-box.mode-original .verdict-badge::before {
+        content: "◦";
+        font-size: 14px;
+      }
+
+      .ai-verdict-box.mode-internet .verdict-badge {
+        color: #b53b9f;
+      }
+
+      .ai-verdict-box.mode-internet .verdict-badge::before {
+        content: "✦";
+      }
+
+      .ai-verdict-box.mode-unrelated .verdict-badge {
+        color: #a65c29;
+      }
+
+      .ai-verdict-box.mode-unrelated .verdict-badge::before {
+        content: "◇";
+      }
+
+      .verdict-source {
+        display: none;
+      }
+
+      .ai-verdict-reason {
+        margin: 0;
+        font-size: 13px;
+        line-height: 1.56;
+        color: rgba(31, 39, 82, 0.94);
+      }
+
+      .ai-verdict-box.is-idle .ai-verdict-reason {
+        color: rgba(52, 66, 118, 0.74);
+        font-size: 12.5px;
+      }
+
+      /* 仅保留 2 项参数（Stability / Bloom），未输入或无关输入时隐藏防穿帮 */
+      .semantic-metrics {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 14px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(58, 70, 128, 0.16);
+        color: rgba(44, 54, 104, 0.86);
+        font-size: 11.5px;
+        animation: metricsReveal 360ms ease-out;
+      }
+
+      .semantic-metrics.is-unmeasured {
+        display: none;
+      }
+
+      @keyframes metricsReveal {
+        from {
+          opacity: 0;
+          transform: translateY(4px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .semantic-metrics label {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 7px;
+      }
+
+      .metric-num {
+        font-size: 10.5px;
+        font-variant-numeric: tabular-nums;
+        opacity: 0.82;
+        min-width: 28px;
+        text-align: right;
+      }
+
+      .semantic-metrics meter {
+        width: 100%;
+        height: 6px;
+      }
+
+      .semantic-metrics meter::-webkit-meter-bar {
+        border: 0;
+        border-radius: 999px;
+        background: rgba(56, 70, 132, 0.16);
+      }
+
+      .semantic-metrics meter::-webkit-meter-optimum-value {
+        border-radius: 999px;
+        background: linear-gradient(90deg, #4dbbe8, #d877cc);
+      }
+
+      /* 下半部分：独立分裂果冻输入舱（与上方统一的 Dew 奶白配色，无嵌套圆角框，录屏大字清晰） */
+      .jelly-input-pod {
+        position: relative;
+        z-index: 1;
+        margin-top: 24px;
+        padding: 18px 26px 16px;
+        border-radius: 26px;
+      }
+
+      .agent-form {
+        display: grid;
+        gap: 10px;
+      }
+
+      .prompt-textarea {
+        width: 100%;
+        min-height: 78px;
+        padding: 2px 0 4px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: #1c244f;
+        font-family: "Nightgazer", "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+        font-size: 17.5px;
+        line-height: 1.52;
+        letter-spacing: 0.015em;
+        resize: none;
+        outline: none;
+        box-shadow: none;
+      }
+
+      .prompt-textarea::placeholder {
+        color: rgba(62, 76, 128, 0.56);
+        font-size: 15px;
+      }
+
+      .prompt-textarea:focus {
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+      }
+
+      .form-footer-row {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 14px;
+        padding-top: 9px;
+        border-top: 1px solid rgba(58, 70, 128, 0.16);
+      }
+
+      /* 轻量预设示例句（无框链接） */
+      .preset-chips {
+        flex: 1;
+        min-width: 0;
+        display: grid;
+        gap: 4px;
+      }
+
+      .preset-chip {
+        height: auto;
+        padding: 2px 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+        color: rgba(46, 58, 108, 0.78);
+        font-size: 11.5px;
+        line-height: 1.4;
+        text-align: left;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        cursor: pointer;
+        transition: color 160ms ease;
+      }
+
+      .preset-chip:hover:not(:disabled) {
+        border-color: transparent;
+        background: transparent;
+        color: #141b42;
+        transform: none;
+      }
+
+      .preset-chip .chip-tag {
+        margin-right: 6px;
+        font-weight: 600;
+      }
+
+      .preset-chip .chip-tag.tag-origin {
+        color: #1580a8;
+      }
+
+      .preset-chip .chip-tag.tag-internet {
+        color: #bd40a5;
+      }
+
+      /* 无框星芒发送触发字 */
+      .jelly-submit-btn {
+        flex-shrink: 0;
+        height: auto;
+        padding: 4px 2px 4px 8px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: #253068;
+        font-size: 14.5px;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        box-shadow: none;
+        cursor: pointer;
+        transition: color 180ms ease, transform 180ms cubic-bezier(0.22, 1.35, 0.36, 1);
+      }
+
+      .jelly-submit-btn::after {
+        content: " ✦";
+        color: #c84bb4;
+        font-weight: 400;
+      }
+
+      .jelly-submit-btn:hover:not(:disabled) {
+        border-color: transparent;
+        background: transparent;
+        color: #111944;
+        transform: translateX(2px) scale(1.04);
+      }
+
+      /* 通用弹窗表单控件（无阴影） */
+      .soft-pill-btn {
+        height: 30px;
+        padding: 0 12px;
+        border-radius: 8px;
+        border: 1px solid rgba(236, 246, 255, 0.26);
+        background: rgba(42, 52, 98, 0.56);
+        color: rgba(244, 251, 255, 0.94);
+        font-size: 12px;
+        cursor: pointer;
+        box-shadow: none;
+        transition: all 160ms ease;
+      }
+
+      .soft-pill-btn:hover:not(:disabled) {
+        border-color: rgba(224, 255, 255, 0.58);
+        background: rgba(112, 138, 202, 0.46);
+      }
+
+      input,
+      select,
+      button {
+        height: 36px;
+        min-width: 0;
+        border-radius: 8px;
+        border: 1px solid rgba(238, 248, 255, 0.24);
+        background: rgba(26, 34, 72, 0.56);
+        color: var(--text);
+        font-family: "Nightgazer", "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+        font-size: 13px;
+        box-shadow: none;
+      }
+
+      input,
+      select {
+        flex: 1;
+        padding: 0 12px;
+        outline: none;
+      }
+
+      input:focus,
+      select:focus {
+        border-color: rgba(180, 244, 255, 0.72);
+      }
+
+      button {
+        padding: 0 14px;
+        cursor: pointer;
+        transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+      }
+
+      button:disabled {
+        opacity: 0.55;
+        cursor: wait;
+      }
+
+      @keyframes jellyRainbowText {
+        from {
+          background-position: 0% 50%;
+        }
+        to {
+          background-position: 220% 50%;
+        }
+      }
+
+      /* ==================== AI API 配置弹窗（无阴影） ==================== */
+      .api-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 30;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        background: rgba(10, 14, 30, 0.58);
+        backdrop-filter: blur(8px);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 220ms ease;
+      }
+
+      .api-modal-backdrop.is-open {
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      .api-modal {
+        width: min(460px, 94vw);
+        padding: 22px 24px;
+        border-radius: 14px;
+        border: 1.5px solid rgba(235, 246, 255, 0.36);
+        background: linear-gradient(145deg, rgba(36, 44, 88, 0.94), rgba(20, 26, 56, 0.96));
+        box-shadow: none;
+      }
+
+      .api-modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 14px;
+      }
+
+      .api-modal-header h2 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+        color: #f3fbff;
+      }
+
+      .api-modal-desc {
+        margin: 0 0 14px;
+        font-size: 12px;
+        line-height: 1.55;
+        color: rgba(225, 240, 255, 0.82);
+      }
+
+      .api-form-grid {
+        display: grid;
+        gap: 10px;
+      }
+
+      .api-field {
+        display: grid;
+        gap: 4px;
+      }
+
+      .api-field label {
+        font-size: 11.5px;
+        color: rgba(220, 238, 255, 0.84);
+      }
+
+      .api-modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 16px;
+        flex-wrap: wrap;
+      }
+
+      .api-save-btn {
+        border-color: rgba(145, 244, 255, 0.55);
+        background: rgba(68, 148, 198, 0.48);
+      }
+
+      .api-test-result {
+        margin: 8px 0 0;
+        min-height: 18px;
+        font-size: 11.5px;
+        line-height: 1.45;
+        color: rgba(215, 240, 255, 0.86);
+      }
+
+      .api-test-result.is-ok {
+        color: #9fffe0;
+      }
+
+      .api-test-result.is-err {
+        color: #ffb0cc;
+      }
+
+      @keyframes agentMarquee {
+        from {
+          transform: translateX(0);
+        }
+        to {
+          transform: translateX(-100%);
+        }
+      }
+
+      @keyframes frameBreath {
+        0%,
+        100% {
+          opacity: 0.88;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+
+      @keyframes frameFloat {
+        0%,
+        100% {
+          transform: translate3d(0, 0, 0) scale(1);
+        }
+        50% {
+          transform: translate3d(0, -5px, 0) scale(1.003);
+        }
+      }
+
+      @keyframes framePulse {
+        0%,
+        100% {
+          transform: scale(1);
+          opacity: 0.24;
+        }
+        50% {
+          transform: scale(1.005);
+          opacity: 0.36;
+        }
+      }
+
+      @media (max-width: 820px) {
+        body.is-detail-mode .agent-marquee {
+          left: 50%;
+          width: min(90vw, 520px);
+        }
+
+        .control-panel {
+          top: auto;
+          bottom: 12px;
+          right: 12px;
+          left: 12px;
+          width: auto;
+          transform: translate3d(0, 20px, 0) scale(0.98);
+        }
+
+        .control-panel.is-visible {
+          transform: translate3d(0, 0, 0) scale(1);
+        }
+
+        .jelly-top-bar {
+          padding: 0 6px 0 10px;
+        }
+
+        .jelly-nameplate {
+          padding: 8px 16px 10px;
+        }
+
+        .jelly-body-inner {
+          max-height: 36vh;
+          padding: 16px 18px 14px;
+        }
+
+        .jelly-inner-topbar {
+          flex-wrap: wrap;
+          gap: 6px 10px;
+        }
+
+        .jelly-input-pod {
+          margin-top: 20px;
+          padding: 14px 18px 14px;
+        }
+
+        .prompt-textarea {
+          min-height: 62px;
+          font-size: 15.5px;
+        }
+
+        .form-footer-row {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .jelly-submit-btn {
+          align-self: flex-end;
+        }
+      }
+    </style>
+  </head>
+
+  <!-- ==================== 2. 页面结构 ==================== -->
+  <body>
+    <main class="app-shell">
+      <canvas id="dataRain"></canvas>
+      <canvas id="scene"></canvas>
+      <canvas id="dataFeedFront"></canvas>
+
+      <div class="particle-glass" aria-hidden="true"></div>
+      <div class="agent-marquee" aria-live="polite">
+        <span id="agentMarqueeText">Semantic Geneticist :: Awaiting linguistic specimen input...</span>
+      </div>
+
+      <div class="panorama-hint" id="panoramaHint" aria-hidden="true">
+        Click any specimen &amp; type a sentence in English or Chinese
+      </div>
+
+      <!-- 导入本地 GLB 的提示胶囊（无本地服务器或预览模式时显示） -->
+      <div id="glbImportBanner" class="glb-import-banner is-hidden" role="button" tabindex="0">
+        <span id="glbImportText">Click to import model-0.glb ~ model-4.glb (or drag &amp; drop · cached locally)</span>
+      </div>
+      <input id="glbFileInput" type="file" accept=".glb,.gltf" multiple hidden />
+
+      <div class="frame-overlay" aria-hidden="true">
+        <div class="frame-image"></div>
+        <div class="frame-shine"></div>
+        <div class="frame-pulse"></div>
+      </div>
+
+      <!-- 右侧上下分裂式 WebGL2 仙境果冻对话框（统一 Dew 露珠奶白 · 默认英文版） -->
+      <section class="control-panel is-en-mode" id="specimenDossier" aria-label="Agent controls" aria-hidden="true">
+        <canvas id="jellyDialogCanvas" class="jelly-dialog-canvas" aria-hidden="true"></canvas>
+
+        <!-- 外部顶栏：仅保留纯粹的左侧凸起彩虹铭牌，自由伸缩适配中英文长度 -->
+        <div class="jelly-top-bar">
+          <div class="jelly-nameplate" id="jellyNameplate">
+            <b id="sampleName">Bengzhu (Hold Taut)</b>
+          </div>
+        </div>
+
+        <!-- 上半部分果冻本体：功能项收纳在内部右上角 -->
+        <div class="jelly-body-inner" id="jellyBodyInner">
+          <div class="jelly-inner-topbar">
+            <b class="jelly-live-state" id="sampleState">Idle</b>
+            <div class="jelly-top-actions">
+              <output id="status">Preview</output>
+              <button type="button" id="langToggleBtn" class="jelly-text-action" title="Switch English / Chinese">中文</button>
+              <span class="jelly-action-sep" aria-hidden="true">·</span>
+              <button type="button" id="openApiConfigBtn" class="jelly-text-action">DeepSeek</button>
+              <span class="jelly-action-sep" aria-hidden="true">·</span>
+              <button type="button" id="reimportGlbBtn" class="jelly-text-action">GLB</button>
+              <span class="jelly-action-sep" aria-hidden="true">·</span>
+              <button type="button" id="closeDetailBtn" class="jelly-text-action">Back</button>
+            </div>
+          </div>
+
+          <div class="specimen-nav-row">
+            <div class="specimen-tabs" id="specimenTabs"></div>
+          </div>
+
+          <div class="chat-log" id="chatLog">
+            <div class="subject-story-list">
+              <p class="subject-story-item">
+                <span id="labelOrigin">Original</span>
+                <em id="sampleOriginDesc">Physically pulling tight, holding taut, or maintaining structural tension.</em>
+              </p>
+              <p class="subject-story-item">
+                <span id="labelCurrent">Internet</span>
+                <em id="sampleCurrentDesc">Internet slang for keeping a straight face or holding one's emotions together under pressure.</em>
+              </p>
+            </div>
+
+            <!-- 纯粹无框对话排印 -->
+            <div class="ai-verdict-box is-idle" id="aiVerdictBox">
+              <div class="ai-verdict-head">
+                <span class="verdict-badge" id="verdictBadge"></span>
+                <span class="verdict-source" id="verdictSource"></span>
+              </div>
+              <p class="ai-verdict-reason" id="verdictReason">
+                Write a sentence using "Bengzhu (Hold Taut)" — watch how the specimen responds to its literal root versus its internet meaning.
+              </p>
+            </div>
+
+            <!-- 仅在观众提交有效句子且 AI 返回判定后才浮现，杜绝未输入前穿帮 -->
+            <div class="semantic-metrics is-unmeasured" id="semanticMetrics" aria-label="Semantic metrics">
+              <label>
+                <span id="labelStability">Stability</span>
+                <meter id="metricStability" min="0" max="100" value="0"></meter>
+                <span class="metric-num" id="metricStabilityVal">0%</span>
+              </label>
+              <label>
+                <span id="labelSpread">Bloom</span>
+                <meter id="metricSpread" min="0" max="100" value="0"></meter>
+                <span class="metric-num" id="metricSpreadVal">0%</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 下半部分独立分裂果冻输入舱（与上方统一的 Dew 奶白配色 · 无嵌套框 · 录屏清晰） -->
+        <form class="jelly-input-pod agent-form" id="agentForm">
+          <textarea
+            id="promptInput"
+            class="prompt-textarea"
+            rows="2"
+            placeholder='Write a sentence with "Bengzhu (Hold Taut)" (English or Chinese, press Enter)...'
+            autocomplete="off"
+          ></textarea>
+          <div class="form-footer-row">
+            <div class="preset-chips" id="presetChips"></div>
+            <button type="submit" id="submitPromptBtn" class="jelly-submit-btn">Analyse</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- AI API 配置弹窗 -->
+      <div class="api-modal-backdrop" id="apiModalBackdrop" aria-hidden="true">
+        <div class="api-modal" role="dialog" aria-modal="true" aria-labelledby="apiModalTitle">
+          <div class="api-modal-header">
+            <h2 id="apiModalTitle">AI Semantic API Settings</h2>
+            <button type="button" id="closeApiModalBtn" class="soft-pill-btn">Close</button>
+          </div>
+          <p class="api-modal-desc" id="apiModalDesc">
+            Supports DeepSeek (direct access worldwide, no VPN needed), OpenAI, Qwen, Kimi, Google Gemini, or any OpenAI-compatible endpoint. Saved locally in your browser; leave the key empty to use the bilingual offline demo.
+          </p>
+          <form class="api-form-grid" id="apiConfigForm">
+            <div class="api-field">
+              <label for="apiProviderSelect" id="apiProviderLabel">Provider</label>
+              <select id="apiProviderSelect">
+                <option value="deepseek">DeepSeek (deepseek-chat)</option>
+                <option value="openai">OpenAI (gpt-4o-mini)</option>
+                <option value="qwen">Qwen DashScope (qwen-plus)</option>
+                <option value="moonshot">Kimi / Moonshot (moonshot-v1-8k)</option>
+                <option value="gemini">Google Gemini (gemini-2.0-flash)</option>
+                <option value="custom">Custom OpenAI-Compatible Endpoint</option>
+              </select>
+            </div>
+            <div class="api-field">
+              <label for="apiUrlInput">API Endpoint URL</label>
+              <input id="apiUrlInput" type="text" placeholder="https://api.deepseek.com/v1/chat/completions" />
+            </div>
+            <div class="api-field">
+              <label for="apiModelInput" id="apiModelLabel">Model</label>
+              <input id="apiModelInput" type="text" placeholder="deepseek-chat" />
+            </div>
+            <div class="api-field">
+              <label for="apiKeyInput">API Key</label>
+              <input id="apiKeyInput" type="password" placeholder="Enter your API key (or leave empty for offline demo)" autocomplete="off" />
+            </div>
+            <p class="api-test-result" id="apiTestResult" aria-live="polite"></p>
+            <div class="api-modal-actions">
+              <button type="button" id="testApiBtn" class="soft-pill-btn">Test Connection</button>
+              <button type="button" id="clearApiKeyBtn" class="soft-pill-btn">Clear Key</button>
+              <button type="submit" id="apiSaveBtn" class="api-save-btn">Save</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </main>
+
+    <!-- ==================== 3. 核心业务逻辑 ==================== -->
+    <script type="module">
+      import * as THREE from "three";
+      import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+      import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+      import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
+
+      // 仅在 HTTP(S) 非 blob 环境下自动请求相对路径 GLB，避免预览沙盒报错
+      const CAN_FETCH_RELATIVE =
+        (window.location.protocol === "http:" || window.location.protocol === "https:") &&
+        !window.location.href.startsWith("blob:");
+
+      // ==================== AI API 默认配置（已默认接入 DeepSeek） ====================
+      const AI_PROVIDER_PRESETS = {
+        deepseek: {
+          label: "DeepSeek",
+          apiType: "openai_compatible",
+          apiUrl: "https://api.deepseek.com/v1/chat/completions",
+          model: "deepseek-chat"
+        },
+        openai: {
+          label: "OpenAI",
+          apiType: "openai_compatible",
+          apiUrl: "https://api.openai.com/v1/chat/completions",
+          model: "gpt-4o-mini"
+        },
+        qwen: {
+          label: "Qwen",
+          apiType: "openai_compatible",
+          apiUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+          model: "qwen-plus"
+        },
+        moonshot: {
+          label: "Kimi",
+          apiType: "openai_compatible",
+          apiUrl: "https://api.moonshot.cn/v1/chat/completions",
+          model: "moonshot-v1-8k"
+        },
+        gemini: {
+          label: "Gemini",
+          apiType: "gemini",
+          apiUrl: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+          model: "gemini-2.0-flash"
+        },
+        custom: {
+          label: "Custom API",
+          apiType: "openai_compatible",
+          apiUrl: "",
+          model: ""
+        }
+      };
+
+      const DEFAULT_AI_CONFIG = {
+        provider: "deepseek",
+        apiType: "openai_compatible",
+        apiUrl: AI_PROVIDER_PRESETS.deepseek.apiUrl,
+        model: AI_PROVIDER_PRESETS.deepseek.model,
+        apiKey: "sk-9e54951898a5484d95f0770b1b0424ce"
+      };
+
+      const AI_CONFIG_STORAGE_KEY = "semantic_waste_city_ai_config_v3";
+
+      function loadAIConfig() {
+        try {
+          const raw = localStorage.getItem(AI_CONFIG_STORAGE_KEY);
+          if (!raw) return { ...DEFAULT_AI_CONFIG };
+          const parsed = JSON.parse(raw);
+          const merged = { ...DEFAULT_AI_CONFIG, ...parsed };
+          if (!merged.apiKey && DEFAULT_AI_CONFIG.apiKey) {
+            merged.apiKey = DEFAULT_AI_CONFIG.apiKey;
+          }
+          return merged;
+        } catch {
+          return { ...DEFAULT_AI_CONFIG };
+        }
+      }
+
+      function saveAIConfig(cfg) {
+        try {
+          localStorage.setItem(AI_CONFIG_STORAGE_KEY, JSON.stringify(cfg));
+        } catch {
+          // 忽略沙盒或隐私模式限制
+        }
+      }
+
+      let aiConfig = loadAIConfig();
+      // 默认优先展示英文界面（面向英语首要观众）
+      let uiLang = "en";
+
+      // ==================== 中英双语 UI 文案（不含“稳定脉冲”等动效提示词） ====================
+      const UI_TEXT = {
+        en: {
+          langToggle: "中文",
+          reimport: "GLB",
+          closeDetail: "Back",
+          origin: "Original",
+          current: "Internet",
+          stability: "Stability",
+          spread: "Bloom",
+          submit: "Analyse",
+          analyzingState: "Analysing...",
+          analyzingBadge: "Interpreting context...",
+          originalLabel: "Original Meaning",
+          internetLabel: "Internet Meaning",
+          unrelatedLabel: "Unrelated Input",
+          idleState: "Idle",
+          panoramaHint: "Click any specimen & type a sentence in English or Chinese",
+          glbBanner: "Click to import model-0.glb ~ model-4.glb (or drag & drop · cached locally)",
+          placeholderPrefix: 'Write a sentence with "',
+          placeholderSuffix: '" (English or Chinese, press Enter)...',
+          welcome: "Welcome to Semantic Waste City. Click any floating specimen and type a sentence in English or Chinese.",
+          returnedPanorama: "Returned to the panorama view; all semantic states have softly reset.",
+          apiModalTitle: "AI Semantic API Settings",
+          apiModalClose: "Close",
+          apiModalDesc:
+            "Supports DeepSeek (direct access worldwide, no VPN needed), OpenAI, Qwen, Kimi, Google Gemini, or any OpenAI-compatible endpoint. Saved locally in your browser; leave the key empty to use the bilingual offline demo.",
+          apiProviderLabel: "Provider",
+          apiModelLabel: "Model",
+          apiTestBtn: "Test Connection",
+          apiClearBtn: "Clear Key",
+          apiSaveBtn: "Save"
+        },
+        zh: {
+          langToggle: "EN",
+          reimport: "模型",
+          closeDetail: "返回",
+          origin: "原始本意",
+          current: "互联网新意",
+          stability: "稳定度",
+          spread: "扩散度",
+          submit: "AI 判定",
+          analyzingState: "AI 判定中...",
+          analyzingBadge: "正在解析语境...",
+          originalLabel: "原始本意",
+          internetLabel: "互联网新意",
+          unrelatedLabel: "未关联当前语料",
+          idleState: "待机观测中",
+          panoramaHint: "点击任意语义模型输入英文或中文语境 · Click any specimen to begin",
+          glbBanner: "点击导入 model-0.glb ~ model-4.glb（或直接拖入窗口 · 导入一次自动缓存）",
+          placeholderPrefix: "用「",
+          placeholderSuffix: "」造句（支持英文或中文，按 Enter 发送）...",
+          welcome: "Welcome to Semantic Waste City. Click any floating specimen and type a sentence in English or Chinese.",
+          returnedPanorama: "Returned to the panorama view; all semantic states have softly reset.",
+          apiModalTitle: "AI 语义判定 API 配置",
+          apiModalClose: "关闭",
+          apiModalDesc:
+            "支持 DeepSeek（国内/海外直连免 VPN）、OpenAI、通义千问、Kimi、Google Gemini 及任意 OpenAI 兼容接口。配置保存在当前浏览器本地；留空 Key 则自动使用双语本地演示判定。",
+          apiProviderLabel: "服务商预设",
+          apiModelLabel: "模型名称",
+          apiTestBtn: "测试连接",
+          apiClearBtn: "清除 Key",
+          apiSaveBtn: "保存配置"
+        }
+      };
+
+      function detectInputLanguage(text) {
+        const chineseCount = (text.match(/[\u4e00-\u9fff]/g) || []).length;
+        const latinCount = (text.match(/[a-zA-Z]/g) || []).length;
+        if (latinCount > 0 && chineseCount === 0) return "en";
+        if (latinCount > chineseCount * 2.2) return "en";
+        return "zh";
+      }
+
+      // --- 5 个语义样本配置（中英双语释义、预设句与专属粒子色板） ---
+      const SUBJECT_CONFIGS = [
+        {
+          name: "绷住",
+          enName: "Bengzhu (Hold Taut)",
+          id: "model-0",
+          file: "./assets/models/model-0.glb",
+          color: 0x78f0ff,
+          rgb: [196, 244, 255],
+          accentRgb: [224, 64, 251],
+          pulsePalette: [0x00e5ff, 0xe040fb, 0x3d5afe],
+          // 冰川青 · 矢车菊蓝 · 兰花紫粉 · 薄荷青（在浅紫天空下饱和通透，绝不发白）
+          particlePalette: [0x00c2ff, 0x4b74ff, 0xd946ef, 0x00d9b8],
+          tokens: ["0", "1", "绷", "住", "张", "力", "情", "绪", "|", "·"],
+          phrases: ["情绪稳定", "破防边缘", "精神紧绷", "表面镇定", "HOLD IT"],
+          presets: {
+            en: [
+              { tag: "Original", type: "original", text: "Pull the tent ropes taut and hold the canvas tight against the wind." },
+              { tag: "Internet", type: "internet_new", text: "After ten midnight emails from my client, I could barely keep a straight face and hold it together." }
+            ],
+            zh: [
+              { tag: "本意", type: "original", text: "风太大了，快把帐篷四周的拉绳绷住固定好" },
+              { tag: "新意", type: "internet_new", text: "看到甲方凌晨发来的第十版修改意见，我努力绷住没有破防" }
+            ]
+          }
+        },
+        {
+          name: "地球online",
+          enName: "Earth Online",
+          id: "model-1",
+          file: "./assets/models/model-1.glb",
+          color: 0x9dffee,
+          rgb: [202, 252, 240],
+          accentRgb: [155, 93, 229],
+          pulsePalette: [0x00f5d4, 0x00bbf9, 0x9b5de5],
+          // 极光翡翠 · 赛博湖蓝 · 星云紫 · 青柠露
+          particlePalette: [0x00c98d, 0x009ef7, 0x7c4dff, 0x42cc64],
+          tokens: ["0", "1", "地", "球", "O", "L", "副", "本", "|", "·"],
+          phrases: ["地球OL", "主线任务", "日常搬砖", "全服玩家", "EARTH OL"],
+          presets: {
+            en: [
+              { tag: "Original", type: "original", text: "Planet Earth is the real natural biosphere that sustains all living creatures." },
+              { tag: "Internet", type: "internet_new", text: "Earth Online feels like a pay-to-win MMO where I just log in to grind daily quests at work." }
+            ],
+            zh: [
+              { tag: "本意", type: "original", text: "我们脚下的这颗地球是人类赖以生存的真实自然环境" },
+              { tag: "新意", type: "internet_new", text: "地球online每天上线打工刷日常副本，氪金体验太差了" }
+            ]
+          }
+        },
+        {
+          name: "上岸",
+          enName: "Shang'an (Reach Shore)",
+          id: "model-2",
+          file: "./assets/models/model-2.glb",
+          color: 0xffd36c,
+          rgb: [255, 236, 188],
+          accentRgb: [255, 77, 109],
+          pulsePalette: [0xffb703, 0xff4d6d, 0x7209b7],
+          // 落日琥珀金 · 珊瑚桃红 · 玫瑰绯红 · 晨曦杏橙
+          particlePalette: [0xff9800, 0xff4778, 0xd9369b, 0xffbe2e],
+          tokens: ["0", "1", "上", "岸", "渡", "水", "目", "标", "|", "·"],
+          phrases: ["一战上岸", "成功录取", "脱离苦海", "终抵陆地", "ASHORE"],
+          presets: {
+            en: [
+              { tag: "Original", type: "original", text: "After swimming across the cold river, she climbed onto the sandy shore to dry off." },
+              { tag: "Internet", type: "internet_new", text: "After two years of gruelling exams, I finally made it ashore and landed my dream offer." }
+            ],
+            zh: [
+              { tag: "本意", type: "original", text: "在湖里游了半小时后，他沿着石阶湿漉漉地爬上岸休息" },
+              { tag: "新意", type: "internet_new", text: "备考两年终于一战上岸，顺利拿到了研究生录取通知书" }
+            ]
+          }
+        },
+        {
+          name: "幻觉",
+          enName: "Huanjue (Hallucination)",
+          id: "model-3",
+          file: "./assets/models/model-3.glb",
+          color: 0xb99cff,
+          rgb: [226, 208, 255],
+          accentRgb: [76, 201, 240],
+          pulsePalette: [0xb5179e, 0x4cc9f0, 0x560bad],
+          // 梦境紫晶 · 幻夜靛紫 · 棱镜冰蓝 · 霓虹丁香
+          particlePalette: [0x9245ff, 0x4a47ff, 0x16bee8, 0xe046d4],
+          tokens: ["0", "1", "幻", "觉", "梦", "境", "虚", "拟", "|", "·"],
+          phrases: ["AI幻觉", "感知漂移", "赛博梦境", "虚假记忆", "HALLUCINATE"],
+          presets: {
+            en: [
+              { tag: "Original", type: "original", text: "Severe fever and sleep deprivation caused him to suffer vivid visual hallucinations." },
+              { tag: "Internet", type: "internet_new", text: "The AI chatbot hallucinated three completely fake academic citations with total confidence." }
+            ],
+            zh: [
+              { tag: "本意", type: "original", text: "连续熬夜发高烧后，他眼前出现模糊重影产生了视觉幻觉" },
+              { tag: "新意", type: "internet_new", text: "大模型刚刚出现AI幻觉，一本正经地编造了一篇不存在的论文" }
+            ]
+          }
+        },
+        {
+          name: "人机",
+          enName: "Renji (Human-Machine / NPC)",
+          id: "model-4",
+          file: "./assets/models/model-4.glb",
+          color: 0xff8fe8,
+          rgb: [255, 204, 240],
+          accentRgb: [255, 158, 0],
+          pulsePalette: [0xff2a85, 0xff9e00, 0x7b2cbf],
+          // 霓虹蔷薇 · 珊瑚蜜橘 · 赛博紫罗兰 · 樱莓粉
+          particlePalette: [0xff2982, 0xff7526, 0x8e3dff, 0xff52b4],
+          tokens: ["0", "1", "人", "机", "算", "法", "代", "码", "|", "·"],
+          phrases: ["已读乱回", "人机感", "脚本社交", "算法规训", "NPC VIBE"],
+          presets: {
+            en: [
+              { tag: "Original", type: "original", text: "Engineers are testing a new human-machine interface for surgical robotic arms." },
+              { tag: "Internet", type: "internet_new", text: "He gave such scripted, robotic replies at the party—pure NPC energy." }
+            ],
+            zh: [
+              { tag: "本意", type: "original", text: "实验室正在测试新一代工业机械臂与操作员之间的人机协作" },
+              { tag: "新意", type: "internet_new", text: "他在聚会上全程已读乱回，说话透着一股很强的人机感" }
+            ]
+          }
+        }
+      ];
+
+      const SEMANTIC_SAMPLES = [
+        { sample: "绷住", stability: 72, mutation: 58, spread: 34 },
+        { sample: "地球online", stability: 66, mutation: 61, spread: 40 },
+        { sample: "上岸", stability: 80, mutation: 44, spread: 28 },
+        { sample: "幻觉", stability: 54, mutation: 76, spread: 42 },
+        { sample: "人机", stability: 62, mutation: 74, spread: 38 }
+      ];
+
+      const SEMANTIC_DICT = {
+        绷住: {
+          origin: "物理上的拉紧、撑住、维持结构或物体的张力状态",
+          current: "互联网语境中指面对压力、尴尬、搞笑或崩溃边缘时努力克制情绪、保持镇定不破防",
+          enOrigin: "Physically pulling tight, holding taut, or maintaining structural tension (e.g., ropes, fabric, strings).",
+          enCurrent: "Internet slang for desperately keeping a straight face, suppressing laughter/tears, or holding one's emotions together under pressure."
+        },
+        地球online: {
+          origin: "真实存在的地球与现实生活环境",
+          current: "互联网语境中把现实人生戏谑地比作一款大型在线游戏（刷副本、打怪、主线任务、氪金、上线下线）",
+          enOrigin: "The real physical planet Earth, nature, ecology, and everyday earthly environment.",
+          enCurrent: "Internet metaphor framing real life as a massive online game (MMORPG) with daily quests, grinding, pay-to-win mechanics, and NPCs."
+        },
+        上岸: {
+          origin: "从水中游动或乘船回到陆地岸边",
+          current: "互联网语境中指考研、考公、求职成功，或脱离困境达成阶段性人生目标",
+          enOrigin: "Physically swimming or sailing out of water onto dry land or the river/sea shore.",
+          enCurrent: "Internet slang for succeeding in fierce exams, securing a stable job/offer, or finally escaping a stressful life stage."
+        },
+        幻觉: {
+          origin: "生理或精神上的感知异常，看见或听见现实中不存在的事物",
+          current: "互联网语境中常指 AI 模型一本正经胡说八道（AI幻觉），或夸张调侃某种不切实际的错觉与想象",
+          enOrigin: "Medical or physiological sensory perception of things that do not exist (due to fever, sleep loss, illness, etc.).",
+          enCurrent: "Internet/tech slang for AI models confidently inventing false facts (AI hallucination) or playful delusions online."
+        },
+        人机: {
+          origin: "人类与机器之间的交互关系、协同作业或设备接口",
+          current: "互联网语境中形容真人在社交、游戏或回复中表现得像机器人/NPC一样呆板、机械、已读乱回（人机感）",
+          enOrigin: "Human-machine interaction, ergonomics, engineering interfaces, or robotic collaboration.",
+          enCurrent: "Internet slang describing a real person acting awkward, scripted, lifeless, or robotic like an NPC or bot in conversation/gaming."
+        }
+      };
+
+      // 安全视口尺寸（防止 iframe 尚未完成布局时出现 0 高度导致 NaN / 非有限值）
+      function getSafeViewport() {
+        return {
+          w: Math.max(1, Math.round(window.innerWidth || document.documentElement.clientWidth || 1280)),
+          h: Math.max(1, Math.round(window.innerHeight || document.documentElement.clientHeight || 720))
+        };
+      }
+
+      const initVP = getSafeViewport();
+
+      // --- Three.js 场景、渲染器与相机初始化（60FPS 轻量化配置） ---
+      const scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0xc8d2f0, 0.036);
+
+      const sceneCanvas = document.querySelector("#scene");
+      const renderer = new THREE.WebGLRenderer({
+        canvas: sceneCanvas,
+        antialias: true,
+        alpha: true,
+        powerPreference: "high-performance"
+      });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+      renderer.setSize(initVP.w, initVP.h);
+      renderer.setClearColor(0x000000, 0);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.04;
+
+      scene.environment = createIridescentEnvironment(renderer);
+
+      const camera = new THREE.PerspectiveCamera(42, initVP.w / initVP.h, 0.1, 120);
+      camera.position.set(0, 2.92, 9.25);
+      camera.lookAt(0, 1.05, -0.2);
+      camera.updateMatrixWorld(true);
+      scene.add(camera);
+
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.enabled = false;
+      controls.target.set(0, 1.05, -0.2);
+
+      // --- 高效灯光系统（单一焦点动态点光源 + 方向光） ---
+      scene.add(new THREE.HemisphereLight(0xdce8ff, 0x3b2d5e, 1.05));
+
+      const dirLight = new THREE.DirectionalLight(0xfff6ff, 1.48);
+      dirLight.position.set(4, 7, 6);
+      scene.add(dirLight);
+
+      const fillLight = new THREE.DirectionalLight(0xbbe8ff, 0.72);
+      fillLight.position.set(-5, 2, -4);
+      scene.add(fillLight);
+
+      const focalPulseLight = new THREE.PointLight(0x9ceeff, 0, 6.2, 1.4);
+      scene.add(focalPulseLight);
+
+      // --- 场景容器组 ---
+      const subjectsGroup = new THREE.Group();
+      scene.add(subjectsGroup);
+
+      const ambientParticles = createAmbientParticles();
+      scene.add(ambientParticles.points);
+
+      // 内置柔雾灵核贴图（自然柔化简化 GLB 内部破面缺口）
+      const softCoreMistTexture = createSoftMistTexture();
+
+      // 存储 5 个模型在 2D 屏幕上的实时投影坐标与状态
+      const modelScreenTargets = SUBJECT_CONFIGS.map((cfg, idx) => ({
+        x: (idx + 1) * (initVP.w / 6),
+        y: initVP.h * 0.56,
+        radius: 85,
+        weight: 1,
+        visibleAlpha: 1,
+        mutationLevel: 0.5,
+        pulseVisual: 0,
+        semanticMode: "idle",
+        rgb: cfg.rgb,
+        accentRgb: cfg.accentRgb,
+        tokens: cfg.tokens,
+        phrases: cfg.phrases,
+        onBeatPulse: null
+      }));
+
+      // --- GLTFLoader 初始化 ---
+      const gltfLoader = new GLTFLoader();
+      const dracoLoader = new DRACOLoader();
+      dracoLoader.setDecoderPath("https://cdn.jsdelivr.net/npm/three@0.166.0/examples/jsm/libs/draco/");
+      gltfLoader.setDRACOLoader(dracoLoader);
+
+      const subjectGroups = [];
+      const clickTargets = [];
+
+      // ==================== DOM 元素绑定 ====================
+      const statusEl = document.querySelector("#status");
+      const glbImportBannerEl = document.querySelector("#glbImportBanner");
+      const glbImportTextEl = document.querySelector("#glbImportText");
+      const glbFileInputEl = document.querySelector("#glbFileInput");
+      const reimportGlbBtnEl = document.querySelector("#reimportGlbBtn");
+      const closeDetailBtnEl = document.querySelector("#closeDetailBtn");
+      const specimenTabsEl = document.querySelector("#specimenTabs");
+      const presetChipsEl = document.querySelector("#presetChips");
+      const langToggleBtnEl = document.querySelector("#langToggleBtn");
+      const panoramaHintEl = document.querySelector("#panoramaHint");
+
+      const openApiConfigBtnEl = document.querySelector("#openApiConfigBtn");
+      const apiModalBackdropEl = document.querySelector("#apiModalBackdrop");
+      const closeApiModalBtnEl = document.querySelector("#closeApiModalBtn");
+      const apiModalTitleEl = document.querySelector("#apiModalTitle");
+      const apiModalDescEl = document.querySelector("#apiModalDesc");
+      const apiProviderLabelEl = document.querySelector("#apiProviderLabel");
+      const apiModelLabelEl = document.querySelector("#apiModelLabel");
+      const apiConfigFormEl = document.querySelector("#apiConfigForm");
+      const apiProviderSelectEl = document.querySelector("#apiProviderSelect");
+      const apiUrlInputEl = document.querySelector("#apiUrlInput");
+      const apiModelInputEl = document.querySelector("#apiModelInput");
+      const apiKeyInputEl = document.querySelector("#apiKeyInput");
+      const testApiBtnEl = document.querySelector("#testApiBtn");
+      const clearApiKeyBtnEl = document.querySelector("#clearApiKeyBtn");
+      const apiSaveBtnEl = document.querySelector("#apiSaveBtn");
+      const apiTestResultEl = document.querySelector("#apiTestResult");
+
+      const aiVerdictBoxEl = document.querySelector("#aiVerdictBox");
+      const verdictBadgeEl = document.querySelector("#verdictBadge");
+      const verdictSourceEl = document.querySelector("#verdictSource");
+      const verdictReasonEl = document.querySelector("#verdictReason");
+
+      const agentFormEl = document.querySelector("#agentForm");
+      const promptInputEl = document.querySelector("#promptInput");
+      const submitPromptBtnEl = document.querySelector("#submitPromptBtn");
+      const controlPanelEl = document.querySelector("#specimenDossier");
+      const sampleNameEl = document.querySelector("#sampleName");
+      const sampleStateEl = document.querySelector("#sampleState");
+      const sampleOriginDescEl = document.querySelector("#sampleOriginDesc");
+      const sampleCurrentDescEl = document.querySelector("#sampleCurrentDesc");
+      const semanticMetricsEl = document.querySelector("#semanticMetrics");
+      const metricStabilityEl = document.querySelector("#metricStability");
+      const metricSpreadEl = document.querySelector("#metricSpread");
+      const metricStabilityValEl = document.querySelector("#metricStabilityVal");
+      const metricSpreadValEl = document.querySelector("#metricSpreadVal");
+      const agentMarqueeEl = document.querySelector(".agent-marquee");
+      const agentMarqueeTextEl = document.querySelector("#agentMarqueeText");
+
+      const labelOriginEl = document.querySelector("#labelOrigin");
+      const labelCurrentEl = document.querySelector("#labelCurrent");
+      const labelStabilityEl = document.querySelector("#labelStability");
+      const labelSpreadEl = document.querySelector("#labelSpread");
+
+      const appState = { frameReady: true, welcomeShown: false, glbFailedCount: 0 };
+      const mouseNDC = new THREE.Vector2(0, 0);
+
+      let isDetailView = false;
+      let selectedIndex = 0;
+      const dragState = {
+        active: false,
+        lastX: 0,
+        lastY: 0,
+        startX: 0,
+        startY: 0,
+        moved: false,
+        rotation: 0,
+        targetRotation: 0,
+        inspectYaw: 0,
+        inspectPitch: 0
+      };
+
+      // 1. 创建 5 个语义模型槽位（柔雾灵核 + 本意圣洁共鸣光环 + 新意彩色仙境星芒粒子）
+      SUBJECT_CONFIGS.forEach((config, index) => {
+        const group = new THREE.Group();
+        const angle = (index / SUBJECT_CONFIGS.length) * Math.PI * 2 - Math.PI / 2;
+        group.position.set(Math.cos(angle) * 3.6, 0.65, Math.sin(angle) * 2.2);
+
+        const colorA = new THREE.Color(config.pulsePalette[0]);
+        const colorB = new THREE.Color(config.pulsePalette[1]);
+        const colorC = new THREE.Color(config.pulsePalette[2]);
+
+        group.userData = {
+          baseOrbitAngle: angle,
+          baseY: group.position.y,
+          speed: 0.8 + index * 0.12,
+          energy: 0.35,
+          glow: 0.42,
+          pulseTarget: 0,
+          pulseCurrent: 0,
+          pulseWaveRadius: 1.5,
+          lastPulseTime: 0,
+          semanticMode: "idle", // "idle" | "original" | "internet_new" | "unrelated"
+          breathClock: 0,
+          originalCurrent: 0,
+          originalTarget: 0,
+          expandCurrent: 0,
+          expandTarget: 0,
+          particleBurst: 0,
+          lastVerdict: null,
+          pulseColorA: colorA,
+          pulseColorB: colorB,
+          pulseColorC: colorC,
+          pulseShaders: [],
+          cachedMaterials: [],
+          targetScale: 1,
+          opacity: 0.88,
+          semantic: createSemanticState(index),
+          semanticParts: [],
+          placeholder: true,
+          loaded: false,
+          currentModelObj: null,
+          labelSprite: null,
+          softCoreSprite: null
+        };
+        subjectsGroup.add(group);
+        subjectGroups.push(group);
+
+        const clickTarget = new THREE.Mesh(
+          new THREE.SphereGeometry(1.35, 16, 12),
+          new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+        );
+        clickTarget.name = `${config.name}-click-target`;
+        clickTarget.userData.subjectIndex = index;
+        clickTarget.userData.subjectRoot = group;
+        clickTarget.userData.isClickTarget = true;
+        group.add(clickTarget);
+        clickTargets.push(clickTarget);
+
+        // 内置仙境柔雾灵核（自然柔化简化 GLB 内部破面或暗影）
+        const coreSprite = new THREE.Sprite(
+          new THREE.SpriteMaterial({
+            map: softCoreMistTexture,
+            color: new THREE.Color(config.color).lerp(new THREE.Color(0xffffff), 0.35),
+            transparent: true,
+            opacity: 0.32,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+          })
+        );
+        coreSprite.scale.set(2.15, 2.15, 1);
+        coreSprite.userData.semanticEffect = true;
+        group.add(coreSprite);
+        group.userData.softCoreSprite = coreSprite;
+
+        const placeholder = createPlaceholderSubject(config, index);
+        attachSubtlePulseShader(placeholder, group, config.pulsePalette);
+        group.add(placeholder);
+        group.userData.currentModelObj = placeholder;
+
+        modelScreenTargets[index].onBeatPulse = (strength = 0.82, forceImmediate = false) => {
+          triggerModelLightPulse(index, strength, forceImmediate);
+        };
+
+        const label = createLabelSprite(config.name);
+        label.position.y = -1.18;
+        group.add(label);
+        group.userData.labelSprite = label;
+
+        setupSemanticParts(group, placeholder, config, index, true);
+      });
+
+      // 初始化 60FPS 字符雨（无垂直连线） + 环绕双螺旋字链
+      const dataRain = initDataRain(modelScreenTargets);
+
+      // 初始化统一 Dew 露珠奶白配色的上下分裂式 WebGL2 果冻对话框
+      const jellyDialog = initJellyDialog();
+
+      // 2. 挂载 GLTF 模型并绑定无缝径向脉冲与修面材质
+      function mountGLTFToSlot(index, gltf) {
+        const group = subjectGroups[index];
+        const config = SUBJECT_CONFIGS[index];
+        const model = gltf.scene || gltf.scenes?.[0];
+        if (!group || !model) return;
+
+        if (group.userData.currentModelObj) {
+          group.remove(group.userData.currentModelObj);
+          disposeObject3D(group.userData.currentModelObj);
+        }
+
+        group.userData.pulseShaders = [];
+        normalizeSubjectModel(model, config.color);
+        attachSubtlePulseShader(model, group, config.pulsePalette);
+        group.add(model);
+        group.userData.currentModelObj = model;
+        setupSemanticParts(group, model, config, index, false);
+        group.userData.placeholder = false;
+        group.userData.loaded = true;
+        updateLoadingStatus();
+      }
+
+      function parseAndMountGLBBuffer(index, arrayBuffer) {
+        return new Promise((resolve, reject) => {
+          const resourcePath = CAN_FETCH_RELATIVE ? "./assets/models/" : "";
+          gltfLoader.parse(
+            arrayBuffer,
+            resourcePath,
+            (gltf) => {
+              mountGLTFToSlot(index, gltf);
+              resolve(gltf);
+            },
+            (err) => {
+              console.error(`Failed to parse model-${index}.glb:`, err);
+              reject(err);
+            }
+          );
+        });
+      }
+
+      // 3. IndexedDB 本地缓存管理
+      const DB_NAME = "SemanticWasteCityGLBCache";
+      const STORE_NAME = "glbBuffers";
+
+      function openGLBDatabase() {
+        return new Promise((resolve, reject) => {
+          const req = indexedDB.open(DB_NAME, 1);
+          req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains(STORE_NAME)) {
+              db.createObjectStore(STORE_NAME);
+            }
+          };
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+      }
+
+      async function saveGLBBufferToCache(modelId, buffer) {
+        try {
+          const db = await openGLBDatabase();
+          await new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, "readwrite");
+            tx.objectStore(STORE_NAME).put(buffer, modelId);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+          });
+        } catch (err) {
+          console.warn("IndexedDB GLB cache save skipped:", err);
+        }
+      }
+
+      async function getGLBBufferFromCache(modelId) {
+        try {
+          const db = await openGLBDatabase();
+          return await new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, "readonly");
+            const req = tx.objectStore(STORE_NAME).get(modelId);
+            req.onsuccess = () => resolve(req.result || null);
+            req.onerror = () => reject(req.error);
+          });
+        } catch {
+          return null;
+        }
+      }
+
+      async function autoLoadAllGLBs() {
+        for (let i = 0; i < SUBJECT_CONFIGS.length; i++) {
+          const cfg = SUBJECT_CONFIGS[i];
+          const cachedBuffer = await getGLBBufferFromCache(cfg.id);
+          if (cachedBuffer && cachedBuffer.byteLength > 0) {
+            try {
+              await parseAndMountGLBBuffer(i, cachedBuffer);
+              continue;
+            } catch (e) {
+              console.warn(`Cached GLB ${cfg.id} failed:`, e);
+            }
+          }
+
+          if (CAN_FETCH_RELATIVE) {
+            try {
+              const resolvedUrl = new URL(cfg.file, window.location.href).href;
+              gltfLoader.load(
+                resolvedUrl,
+                (gltf) => mountGLTFToSlot(i, gltf),
+                undefined,
+                () => {
+                  appState.glbFailedCount += 1;
+                  updateLoadingStatus();
+                }
+              );
+            } catch {
+              appState.glbFailedCount += 1;
+            }
+          } else {
+            appState.glbFailedCount += 1;
+          }
+        }
+
+        updateLoadingStatus();
+        const totalLoaded = subjectGroups.filter((g) => g.userData.loaded).length;
+        if (totalLoaded < SUBJECT_CONFIGS.length && !CAN_FETCH_RELATIVE) {
+          glbImportBannerEl.classList.remove("is-hidden");
+        }
+      }
+
+      async function handleUserSelectedGLBFiles(fileList) {
+        const glbFiles = Array.from(fileList).filter((f) => /\.(glb|gltf)$/i.test(f.name));
+        if (!glbFiles.length) return;
+
+        glbImportBannerEl.classList.add("is-hidden");
+
+        const unmatchedFiles = [];
+        const slotFiles = new Array(SUBJECT_CONFIGS.length).fill(null);
+
+        glbFiles.forEach((file) => {
+          const match = file.name.match(/(\d+)/);
+          if (match) {
+            const idx = parseInt(match[1], 10);
+            if (idx >= 0 && idx < SUBJECT_CONFIGS.length && !slotFiles[idx]) {
+              slotFiles[idx] = file;
+              return;
+            }
+          }
+          unmatchedFiles.push(file);
+        });
+
+        unmatchedFiles.sort((a, b) => a.name.localeCompare(b.name));
+        for (let i = 0; i < SUBJECT_CONFIGS.length && unmatchedFiles.length > 0; i++) {
+          if (!slotFiles[i]) slotFiles[i] = unmatchedFiles.shift();
+        }
+
+        for (let i = 0; i < slotFiles.length; i++) {
+          const file = slotFiles[i];
+          if (!file) continue;
+          try {
+            const buffer = await file.arrayBuffer();
+            await parseAndMountGLBBuffer(i, buffer);
+            await saveGLBBufferToCache(SUBJECT_CONFIGS[i].id, buffer);
+          } catch (err) {
+            console.error(`Import failed for ${file.name}:`, err);
+          }
+        }
+
+        const totalLoaded = subjectGroups.filter((g) => g.userData.loaded).length;
+        if (totalLoaded > 0) {
+          updateMarqueeAndSpeak(`Loaded ${totalLoaded} GLB specimens with soft surface smoothing.`);
+        }
+      }
+
+      glbImportBannerEl.addEventListener("click", () => glbFileInputEl.click());
+      reimportGlbBtnEl.addEventListener("click", () => glbFileInputEl.click());
+      glbFileInputEl.addEventListener("change", (e) => {
+        if (e.target.files?.length) {
+          handleUserSelectedGLBFiles(e.target.files);
+          e.target.value = "";
+        }
+      });
+
+      window.addEventListener("dragover", (e) => e.preventDefault());
+      window.addEventListener("drop", (e) => {
+        e.preventDefault();
+        if (e.dataTransfer?.files?.length) {
+          handleUserSelectedGLBFiles(e.dataTransfer.files);
+        }
+      });
+
+      // ==================== AI API 配置弹窗与连接测试 ====================
+      function syncApiConfigUI() {
+        const hasKey = Boolean(aiConfig.apiKey && aiConfig.apiKey.trim());
+        const presetLabel = AI_PROVIDER_PRESETS[aiConfig.provider]?.label || "API";
+        openApiConfigBtnEl.classList.toggle("is-configured", hasKey);
+        openApiConfigBtnEl.textContent = hasKey ? presetLabel : "API";
+      }
+
+      function openApiModal() {
+        apiProviderSelectEl.value = aiConfig.provider || "deepseek";
+        apiUrlInputEl.value = aiConfig.apiUrl || "";
+        apiModelInputEl.value = aiConfig.model || "";
+        apiKeyInputEl.value = aiConfig.apiKey || "";
+        apiTestResultEl.textContent = "";
+        apiTestResultEl.className = "api-test-result";
+        apiModalBackdropEl.classList.add("is-open");
+        apiModalBackdropEl.setAttribute("aria-hidden", "false");
+      }
+
+      function closeApiModal() {
+        apiModalBackdropEl.classList.remove("is-open");
+        apiModalBackdropEl.setAttribute("aria-hidden", "true");
+      }
+
+      apiProviderSelectEl.addEventListener("change", () => {
+        const preset = AI_PROVIDER_PRESETS[apiProviderSelectEl.value];
+        if (preset && apiProviderSelectEl.value !== "custom") {
+          apiUrlInputEl.value = preset.apiUrl;
+          apiModelInputEl.value = preset.model;
+        }
+      });
+
+      openApiConfigBtnEl.addEventListener("click", openApiModal);
+      closeApiModalBtnEl.addEventListener("click", closeApiModal);
+      apiModalBackdropEl.addEventListener("click", (e) => {
+        if (e.target === apiModalBackdropEl) closeApiModal();
+      });
+
+      clearApiKeyBtnEl.addEventListener("click", () => {
+        apiKeyInputEl.value = "";
+        aiConfig.apiKey = "";
+        saveAIConfig(aiConfig);
+        syncApiConfigUI();
+        apiTestResultEl.textContent =
+          uiLang === "en"
+            ? "API key cleared. Using bilingual offline demo."
+            : "已清除 API Key，当前将使用双语本地演示判定。";
+        apiTestResultEl.className = "api-test-result";
+        updateReadoutUI();
+      });
+
+      testApiBtnEl.addEventListener("click", async () => {
+        const provider = apiProviderSelectEl.value;
+        const preset = AI_PROVIDER_PRESETS[provider] || AI_PROVIDER_PRESETS.custom;
+        const testCfg = {
+          provider,
+          apiType: preset.apiType,
+          apiUrl: apiUrlInputEl.value.trim() || preset.apiUrl,
+          model: apiModelInputEl.value.trim() || preset.model,
+          apiKey: apiKeyInputEl.value.trim()
+        };
+
+        if (!testCfg.apiKey) {
+          apiTestResultEl.textContent =
+            uiLang === "en" ? "Please enter an API key first." : "请先填入 API Key 再测试连接。";
+          apiTestResultEl.className = "api-test-result is-err";
+          return;
+        }
+
+        testApiBtnEl.disabled = true;
+        apiTestResultEl.textContent =
+          uiLang === "en"
+            ? `Connecting to ${preset.label} (${testCfg.model})...`
+            : `正在连接 ${preset.label} (${testCfg.model}) ...`;
+        apiTestResultEl.className = "api-test-result";
+
+        const prevCfg = aiConfig;
+        try {
+          aiConfig = testCfg;
+          const res = await callExternalAIJudge(
+            selectedIndex,
+            "After ten midnight emails from my client, I could barely keep a straight face and hold it together."
+          );
+          const lbl =
+            res.meaning_type === "unrelated"
+              ? UI_TEXT[uiLang].unrelatedLabel
+              : res.meaning_type === "original"
+                ? UI_TEXT[uiLang].originalLabel
+                : UI_TEXT[uiLang].internetLabel;
+          apiTestResultEl.textContent =
+            uiLang === "en"
+              ? `✓ Connected! ${preset.label} classified as: ${lbl}`
+              : `✓ 连接成功！${preset.label} 返回：${lbl}`;
+          apiTestResultEl.className = "api-test-result is-ok";
+        } catch (err) {
+          apiTestResultEl.textContent =
+            uiLang === "en" ? `✕ Connection failed: ${err.message}` : `✕ 连接失败：${err.message}`;
+          apiTestResultEl.className = "api-test-result is-err";
+        } finally {
+          aiConfig = prevCfg;
+          testApiBtnEl.disabled = false;
+        }
+      });
+
+      apiConfigFormEl.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const provider = apiProviderSelectEl.value;
+        const preset = AI_PROVIDER_PRESETS[provider] || AI_PROVIDER_PRESETS.custom;
+        aiConfig = {
+          provider,
+          apiType: preset.apiType,
+          apiUrl: apiUrlInputEl.value.trim() || preset.apiUrl,
+          model: apiModelInputEl.value.trim() || preset.model,
+          apiKey: apiKeyInputEl.value.trim()
+        };
+        saveAIConfig(aiConfig);
+        syncApiConfigUI();
+        closeApiModal();
+        updateReadoutUI();
+        updateMarqueeAndSpeak(
+          aiConfig.apiKey
+            ? `${preset.label} semantic API connected. Type any sentence in English or Chinese.`
+            : "No API key set; using the bilingual offline classifier."
+        );
+      });
+
+      // ==================== 3D 交互与射线检测（仅检测 5 个隐形球体） ====================
+      const raycaster = new THREE.Raycaster();
+      const pointer = new THREE.Vector2(99, 99);
+      let hoveredIndex = -1;
+
+      window.addEventListener("pointermove", (e) => {
+        const vp = getSafeViewport();
+        pointer.x = (e.clientX / vp.w) * 2 - 1;
+        pointer.y = -(e.clientY / vp.h) * 2 + 1;
+        mouseNDC.set(pointer.x, pointer.y);
+        document.documentElement.style.setProperty("--mx", `${e.clientX}px`);
+        document.documentElement.style.setProperty("--my", `${e.clientY}px`);
+
+        if (dragState.active) {
+          const deltaX = e.clientX - dragState.lastX;
+          const deltaY = e.clientY - dragState.lastY;
+          dragState.lastX = e.clientX;
+          dragState.lastY = e.clientY;
+          dragState.moved =
+            dragState.moved ||
+            Math.abs(e.clientX - dragState.startX) > 6 ||
+            Math.abs(e.clientY - dragState.startY) > 6;
+
+          if (isDetailView) {
+            dragState.inspectYaw += deltaX * 0.011;
+            dragState.inspectPitch = THREE.MathUtils.clamp(
+              dragState.inspectPitch + deltaY * 0.008,
+              -0.6,
+              0.6
+            );
+          } else {
+            dragState.targetRotation += deltaX * 0.0065;
+          }
+        }
+      });
+
+      renderer.domElement.addEventListener("pointerdown", (e) => {
+        dragState.active = true;
+        dragState.lastX = e.clientX;
+        dragState.lastY = e.clientY;
+        dragState.startX = e.clientX;
+        dragState.startY = e.clientY;
+        dragState.moved = false;
+        renderer.domElement.setPointerCapture(e.pointerId);
+      });
+
+      renderer.domElement.addEventListener("pointerup", (e) => {
+        dragState.active = false;
+        if (!dragState.moved) handleCanvasClick();
+        renderer.domElement.releasePointerCapture(e.pointerId);
+      });
+
+      renderer.domElement.addEventListener("pointercancel", () => {
+        dragState.active = false;
+      });
+
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          if (apiModalBackdropEl.classList.contains("is-open")) {
+            closeApiModal();
+          } else if (isDetailView) {
+            exitSpecimenDetailView();
+          }
+        }
+      });
+
+      let lastSyncedW = initVP.w;
+      let lastSyncedH = initVP.h;
+
+      function syncViewportSize() {
+        const vp = getSafeViewport();
+        lastSyncedW = vp.w;
+        lastSyncedH = vp.h;
+        camera.aspect = vp.w / vp.h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(vp.w, vp.h);
+        dataRain.resize();
+        jellyDialog.resize(true);
+      }
+
+      window.addEventListener("resize", syncViewportSize);
+
+      // ==================== 双语界面切换（英文默认，切换时同步翻译全部内容） ====================
+      function applyStaticUILanguage() {
+        const t = UI_TEXT[uiLang];
+        document.documentElement.lang = uiLang === "en" ? "en" : "zh-CN";
+        controlPanelEl.classList.toggle("is-en-mode", uiLang === "en");
+        langToggleBtnEl.textContent = t.langToggle;
+        reimportGlbBtnEl.textContent = t.reimport;
+        closeDetailBtnEl.textContent = t.closeDetail;
+        labelOriginEl.textContent = t.origin;
+        labelCurrentEl.textContent = t.current;
+        labelStabilityEl.textContent = t.stability;
+        labelSpreadEl.textContent = t.spread;
+        submitPromptBtnEl.textContent = t.submit;
+        panoramaHintEl.textContent = t.panoramaHint;
+        if (glbImportTextEl) glbImportTextEl.textContent = t.glbBanner;
+
+        // 同步翻译 API 配置弹窗
+        apiModalTitleEl.textContent = t.apiModalTitle;
+        closeApiModalBtnEl.textContent = t.apiModalClose;
+        apiModalDescEl.textContent = t.apiModalDesc;
+        apiProviderLabelEl.textContent = t.apiProviderLabel;
+        apiModelLabelEl.textContent = t.apiModelLabel;
+        testApiBtnEl.textContent = t.apiTestBtn;
+        clearApiKeyBtnEl.textContent = t.apiClearBtn;
+        apiSaveBtnEl.textContent = t.apiSaveBtn;
+
+        syncApiConfigUI();
+      }
+
+      langToggleBtnEl.addEventListener("click", () => {
+        uiLang = uiLang === "en" ? "zh" : "en";
+        applyStaticUILanguage();
+        initSpecimenTabs();
+        updateReadoutUI();
+        jellyDialog.pulseSquish(0.28, 0.84, 0.36);
+      });
+
+      function initSpecimenTabs() {
+        specimenTabsEl.innerHTML = "";
+        SUBJECT_CONFIGS.forEach((cfg, idx) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "specimen-tab";
+          btn.textContent = uiLang === "en" ? cfg.enName.split(" ")[0] : cfg.name;
+          btn.addEventListener("click", () => openSpecimenDetailView(idx));
+          specimenTabsEl.appendChild(btn);
+        });
+      }
+
+      closeDetailBtnEl.addEventListener("click", () => exitSpecimenDetailView());
+
+      // 输入框交互：聚焦反馈、轻柔打字弹性、Enter 直接提交
+      promptInputEl.addEventListener("focus", () => jellyDialog.setInputFocused(true));
+      promptInputEl.addEventListener("blur", () => jellyDialog.setInputFocused(false));
+      promptInputEl.addEventListener("input", () => {
+        jellyDialog.pulseSquish(0.45 + Math.random() * 0.25, 0.14, 0.14);
+      });
+      promptInputEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+          e.preventDefault();
+          if (promptInputEl.value.trim() && !promptInputEl.disabled) {
+            agentFormEl.requestSubmit();
+          }
+        }
+      });
+
+      // ==================== AI 实时语义判断核心（三态：original / internet_new / unrelated） ====================
+      function buildSemanticJudgePrompts(cfg, dictEntry, userSentence) {
+        const systemPrompt = `You are the semantic classifier for the interactive art installation "Semantic Waste City".
+Your task: Analyse the visitor's sentence (in English, Chinese, or mixed) regarding the target Chinese lexical specimen "${cfg.name}" (${cfg.enName}), and classify it into ONE of three exact categories:
+1. "original": The sentence genuinely uses the word OR clearly expresses its literal, physical, traditional, or original meaning.
+   - EN: ${dictEntry.enOrigin}
+   - ZH: ${dictEntry.origin}
+2. "internet_new": The sentence genuinely uses the word OR clearly expresses its derived internet slang, cyber metaphor, meme, or contemporary online emotional meaning.
+   - EN: ${dictEntry.enCurrent}
+   - ZH: ${dictEntry.current}
+3. "unrelated": The sentence has NO meaningful semantic connection to "${cfg.name}" (${cfg.enName}) — neither its literal root nor its internet slang meaning (e.g., greetings, random words, gibberish, or off-topic statements). Do NOT force an unrelated sentence into "original" or "internet_new".
+
+Note: An English-speaking visitor might not type Chinese characters; if their English sentence clearly evokes either concept (e.g. "pulling ropes taut" vs "keeping a straight face / holding it together" for 绷住; "human-machine interface" vs "acting like an NPC" for 人机), classify it as "original" or "internet_new". Otherwise, if off-topic or meaningless, you MUST return "unrelated".
+Do NOT mention visual animation terms like "steady pulse", "breathing pulse", "稳定脉冲", or "稳定发光呼吸脉冲" in the labels or explanations — focus purely on the linguistic meaning.
+
+Respond strictly with a single valid JSON object (no markdown fences):
+{
+  "meaning_type": "original" or "internet_new" or "unrelated",
+  "confidence": number between 0.0 and 1.0,
+  "reason_en": "1-2 concise natural British English sentences. If unrelated, politely inform the visitor no semantic link to ${cfg.enName} was detected and invite them to reference either its literal root or internet meaning.",
+  "reason_zh": "1-2句简洁中文。若为 unrelated，请友好提示未检测到与「${cfg.name}」的语义关联，并引导观众围绕它的原始本意或互联网新意造句。",
+  "en_marquee": "One short, poetic English sentence (max 16 words) summarising the result for the exhibition top ticker.",
+  "stability": number 0.0-1.0 (original: 0.80-0.96, internet_new: 0.34-0.60, unrelated: 0.0),
+  "spread": number 0.0-1.0 (original: 0.08-0.22, internet_new: 0.74-0.96, unrelated: 0.0)
+}`;
+
+        const userPrompt = `Target specimen: ${cfg.name} / ${cfg.enName}
+Visitor sentence: "${userSentence}"`;
+
+        return { systemPrompt, userPrompt };
+      }
+
+      function extractJsonFromText(rawText) {
+        const cleaned = String(rawText || "")
+          .replace(/^```(?:json)?\s*/i, "")
+          .replace(/```\s*$/i, "")
+          .trim();
+        const firstBrace = cleaned.indexOf("{");
+        const lastBrace = cleaned.lastIndexOf("}");
+        if (firstBrace === -1 || lastBrace === -1) {
+          throw new Error("Invalid JSON returned by AI");
+        }
+        return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+      }
+
+      async function callExternalAIJudge(index, userSentence) {
+        const cfg = SUBJECT_CONFIGS[index];
+        const dictEntry = SEMANTIC_DICT[cfg.name];
+        const replyLang = detectInputLanguage(userSentence);
+        const { systemPrompt, userPrompt } = buildSemanticJudgePrompts(cfg, dictEntry, userSentence);
+
+        const apiKey = (aiConfig.apiKey || "").trim();
+        if (!apiKey) return null;
+
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), 18000);
+
+        try {
+          let rawContent = "";
+
+          if (aiConfig.apiType === "gemini") {
+            const baseUrl =
+              aiConfig.apiUrl ||
+              `https://generativelanguage.googleapis.com/v1beta/models/${aiConfig.model || "gemini-2.0-flash"}:generateContent`;
+            const url = `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}key=${encodeURIComponent(apiKey)}`;
+            const resp = await fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              signal: controller.signal,
+              body: JSON.stringify({
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+                generationConfig: {
+                  temperature: 0.2,
+                  responseMimeType: "application/json"
+                }
+              })
+            });
+            if (!resp.ok) throw new Error(`Gemini HTTP ${resp.status}`);
+            const data = await resp.json();
+            rawContent = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+          } else {
+            const payload = {
+              model: aiConfig.model,
+              temperature: 0.2,
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt }
+              ]
+            };
+            if (aiConfig.provider === "deepseek" || aiConfig.provider === "openai") {
+              payload.response_format = { type: "json_object" };
+            }
+
+            const resp = await fetch(aiConfig.apiUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`
+              },
+              signal: controller.signal,
+              body: JSON.stringify(payload)
+            });
+            if (!resp.ok) {
+              let errText = `HTTP ${resp.status}`;
+              try {
+                const errJson = await resp.json();
+                if (errJson?.error?.message) errText = errJson.error.message;
+              } catch {
+                // 忽略解析失败
+              }
+              throw new Error(errText);
+            }
+            const data = await resp.json();
+            rawContent = data?.choices?.[0]?.message?.content || "";
+          }
+
+          const parsed = extractJsonFromText(rawContent);
+          const rawType = String(parsed.meaning_type || "").toLowerCase();
+          let resolvedType = "original";
+          if (/unrelated|irrelevant|off.?topic|none|invalid|无关|不相关|未关联/i.test(rawType)) {
+            resolvedType = "unrelated";
+          } else if (rawType === "internet_new" || /new|internet|slang|新意|网络|隐喻|梗/i.test(rawType)) {
+            resolvedType = "internet_new";
+          }
+
+          const presetLabel = AI_PROVIDER_PRESETS[aiConfig.provider]?.label || "AI API";
+          return normalizeJudgeResult(cfg, resolvedType, parsed, presetLabel, replyLang);
+        } finally {
+          window.clearTimeout(timeoutId);
+        }
+      }
+
+      async function analyzePromptOffline(index, promptText) {
+        await new Promise((resolve) => setTimeout(resolve, 420));
+        const cfg = SUBJECT_CONFIGS[index];
+        const replyLang = detectInputLanguage(promptText);
+        const cleanText = promptText.toLowerCase();
+
+        const rules = {
+          绷住: {
+            original: /绳|弦|布|皮|帐篷|拉紧|固定|绷带|撑住|结构|绑|拉直|rope|tent|taut|tight|canvas|string|fabric|pull|stretch|tension/i,
+            internet: /情绪|破防|笑|哭|眼泪|甲方|压力|社死|尴尬|镇定|崩溃|忍住|心累|上班|加班|laugh|cry|straight face|emotion|client|stress|meltdown|hold it together|cringe/i
+          },
+          地球online: {
+            original: /星球|自然|家园|大气|宇宙|生态|太阳系|海洋|陆地|环境|biosphere|planet|nature|ecology|solar|ocean|environment|creatures|orbit/i,
+            internet: /online|ol|玩家|游戏|副本|任务|打工|搬砖|氪金|上线|下线|版本|经验|npc|主线|mmo|game|quest|grind|pay-to-win|server|log in|patch|player/i
+          },
+          上岸: {
+            original: /水|河|海|湖|游泳|船|沙滩|湿|岸边|涉水|渡|浅滩|石阶|swim|river|lake|sea|boat|shore|beach|water|dry off|sand|coast/i,
+            internet: /考研|考公|编制|录取|面试|offer|复试|笔试|备考|工作|求职|解套|成功|一战|二战|exam|graduate|dream job|interview|pass|admitted|escape/i
+          },
+          幻觉: {
+            original: /发烧|高烧|失眠|重影|听觉|视觉|精神|药物|生病|病症|生理|医学|fever|sleep deprivation|illness|medical|visual|auditory|symptom|patient/i,
+            internet: /ai|大模型|gpt|编造|胡说|论文|模型|赛博|错觉|恋爱脑|网友|假记忆|生成|chatbot|llm|fake|citation|invent|fabricate|model|prompt|delusion/i
+          },
+          人机: {
+            original: /交互|机械臂|设备|工程|操作员|界面|协作|航空|实验|硬件|工业|interface|ergonomic|surgical|engineer|industrial|hardware|robotic arm|operator/i,
+            internet: /人机感|已读乱回|呆板|聚会|聊天|社交|npc|脚本|敷衍|像机器人|自动回复|队友|打游戏|尴尬|scripted|npc|bot|awkward|lifeless|party|small talk|vibe|robotic replies/i
+          }
+        };
+
+        const rule = rules[cfg.name];
+        const originHits = (cleanText.match(new RegExp(rule.original.source, "gi")) || []).length;
+        const internetHits = (cleanText.match(new RegExp(rule.internet.source, "gi")) || []).length;
+
+        // 无匹配特征时归为 unrelated，不再强行判作原始本意
+        let meaningType = "unrelated";
+        if (internetHits > originHits) {
+          meaningType = "internet_new";
+        } else if (originHits > internetHits) {
+          meaningType = "original";
+        } else if (originHits > 0 && internetHits > 0) {
+          meaningType = "internet_new";
+        }
+
+        const reason_en =
+          meaningType === "unrelated"
+            ? `No semantic connection to "${cfg.enName}" was detected. Please write a sentence referencing either its literal root or its internet meaning.`
+            : meaningType === "original"
+              ? `This sentence echoes the literal root meaning of "${cfg.enName}", anchored in its original physical or traditional context.`
+              : `This sentence invokes the contemporary internet slang meaning of "${cfg.enName}", shifting it into a modern online metaphor.`;
+
+        const reason_zh =
+          meaningType === "unrelated"
+            ? `未检测到与「${cfg.name}」相关的语义连接，请尝试围绕它的原始本意或互联网新意写一句话。`
+            : meaningType === "original"
+              ? `这句话指向「${cfg.name}」原本的字面与物理语境，语义保持本源状态。`
+              : `这句话引用了「${cfg.name}」在互联网语境下衍生出的特有新意与隐喻表达。`;
+
+        return normalizeJudgeResult(cfg, meaningType, { reason_en, reason_zh }, "Offline Demo", replyLang);
+      }
+
+      function normalizeJudgeResult(cfg, meaningType, raw, sourceLabel, lang) {
+        const isUnrelated = meaningType === "unrelated";
+        const isOriginal = meaningType === "original";
+        const stability = isUnrelated ? 0 : pickFiniteNormalized(raw?.stability, isOriginal ? 0.91 : 0.43);
+        const spread = isUnrelated ? 0 : pickFiniteNormalized(raw?.spread, isOriginal ? 0.12 : 0.87);
+        const mutation = isUnrelated ? 0 : isOriginal ? 0.14 : 0.88;
+
+        const reason_en =
+          raw?.reason_en ||
+          (isUnrelated
+            ? `No semantic link to "${cfg.enName}" was detected. Please write a sentence connected to its literal root or internet meaning.`
+            : isOriginal
+              ? `Recognised as the original literal meaning of "${cfg.enName}".`
+              : `Recognised as the internet slang meaning of "${cfg.enName}".`);
+
+        const reason_zh =
+          raw?.reason_zh ||
+          (isUnrelated
+            ? `这句话与当前语料「${cfg.name}」没有明显关联，请尝试围绕它的原始本意或互联网新意造句。`
+            : isOriginal
+              ? `判定为「${cfg.name}」的原始本意。`
+              : `判定为「${cfg.name}」的互联网新意。`);
+
+        const enMarquee =
+          raw?.en_marquee ||
+          (isUnrelated
+            ? `No semantic link detected for "${cfg.enName}". Please enter a related sentence.`
+            : isOriginal
+              ? `Specimen "${cfg.enName}" resonates with its original literal meaning.`
+              : `Specimen "${cfg.enName}" has drifted into its contemporary internet meaning.`);
+
+        return {
+          word: cfg.name,
+          lang,
+          meaning_type: meaningType,
+          reason_en,
+          reason_zh,
+          reason: lang === "en" ? reason_en : reason_zh,
+          enMarquee,
+          sourceLabel,
+          metrics: {
+            stability,
+            mutation,
+            spread,
+            glow: isUnrelated ? 0.12 : isOriginal ? 0.96 : 1.08
+          }
+        };
+      }
+
+      async function triggerContextExperiment(promptText) {
+        const cleanPrompt = promptText.trim();
+        if (!cleanPrompt) return;
+
+        const targetIndex = selectedIndex;
+        jellyDialog.pulseSquish(0.32, 0.5, 0.25);
+
+        promptInputEl.disabled = true;
+        submitPromptBtnEl.disabled = true;
+
+        const t = UI_TEXT[uiLang];
+        updateReadoutUI(t.analyzingState);
+        aiVerdictBoxEl.classList.remove("is-idle");
+        verdictBadgeEl.textContent = t.analyzingBadge;
+        verdictReasonEl.textContent =
+          uiLang === "en"
+            ? `Evaluating whether "${cleanPrompt}" echoes the literal root or internet meaning...`
+            : `正在解析「${cleanPrompt}」指向的是原始本意还是互联网新意...`;
+        updateMarqueeAndSpeak("Semantic Geneticist is analysing the visitor's sentence for semantic drift...");
+
+        try {
+          let result = null;
+          if (aiConfig.apiKey && aiConfig.apiKey.trim()) {
+            try {
+              result = await callExternalAIJudge(targetIndex, cleanPrompt);
+            } catch (apiErr) {
+              console.warn("External AI API failed, falling back to bilingual local classifier:", apiErr);
+              result = await analyzePromptOffline(targetIndex, cleanPrompt);
+              result.sourceLabel = `Fallback (${apiErr.message})`;
+            }
+          } else {
+            result = await analyzePromptOffline(targetIndex, cleanPrompt);
+          }
+
+          applySemanticJudgeResponse(targetIndex, result, cleanPrompt);
+        } finally {
+          promptInputEl.disabled = false;
+          submitPromptBtnEl.disabled = false;
+          promptInputEl.value = "";
+        }
+      }
+
+      function applySemanticJudgeResponse(index, result, cleanPrompt = "") {
+        const subject = subjectGroups[index];
+        if (!subject) return;
+
+        const isUnrelated = result.meaning_type === "unrelated";
+        const isOriginal = result.meaning_type === "original";
+        const data = subject.userData;
+
+        data.semanticMode = result.meaning_type;
+        data.lastVerdict = result;
+
+        if (isUnrelated) {
+          // 毫不相关的输入：不触发本意脉冲，也不释放新意粒子，模型微微黯淡静默提示
+          data.energy = 0.12;
+          data.glow = 0.12;
+          data.opacity = 0.56;
+          data.targetScale = 0.96;
+          data.originalTarget = 0.0;
+          data.expandTarget = 0.0;
+          data.breathClock = 0;
+          data.particleBurst = 0;
+          data.pulseTarget = 0;
+        } else {
+          if (cleanPrompt) {
+            dataRain.injectCustomPhrase(index, cleanPrompt);
+          }
+          data.energy = isOriginal ? 0.16 : 0.96;
+          data.glow = result.metrics.glow;
+          data.opacity = isOriginal ? 0.98 : 0.9;
+          data.targetScale = isOriginal ? 1.0 : data.placeholder ? 1.05 : 1.03;
+          data.originalTarget = isOriginal ? 1.0 : 0.0;
+          data.expandTarget = isOriginal ? 0.0 : 1.0;
+
+          if (isOriginal) {
+            // 原始本意：沉静凝聚，保持原形不大幅膨胀，仅以纯净呼吸光潮律动
+            data.breathClock = 0;
+            data.particleBurst = 0;
+            triggerModelLightPulse(index, 1.05, true);
+            dataRain.triggerFeedSurge(index, 1.2);
+          } else {
+            // 互联网新意：模型轻微散开漂浮 + 从表面飘散出高光感的专属彩色仙境星光粒子
+            data.particleBurst = 1.0;
+            burstFairyStardust(subject);
+            triggerModelLightPulse(index, 1.15, true);
+            dataRain.triggerFeedSurge(index, 2.8);
+          }
+        }
+
+        if (modelScreenTargets[index]) {
+          modelScreenTargets[index].semanticMode = result.meaning_type;
+        }
+
+        jellyDialog.setMode(result.meaning_type);
+        jellyDialog.pulseSquish(isUnrelated ? 0.34 : 0.54, 0.5, isUnrelated ? 0.36 : 0.52);
+
+        setSubjectSemanticTarget(index, result.metrics);
+        updateReadoutUI();
+        updateMarqueeAndSpeak(result.enMarquee);
+      }
+
+      agentFormEl.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        await triggerContextExperiment(promptInputEl.value);
+      });
+
+      // ==================== 返回全景重置所有动效 + 单物体专属页切换 ====================
+      function resetAllSemanticEffects() {
+        subjectGroups.forEach((subject, idx) => {
+          const data = subject.userData;
+          data.semanticMode = "idle";
+          data.originalTarget = 0;
+          data.expandTarget = 0;
+          data.breathClock = 0;
+          data.particleBurst = 0;
+          data.pulseTarget = 0;
+          data.lastVerdict = null;
+          data.energy = 0.35;
+          data.glow = 0.42;
+          data.opacity = 0.88;
+          data.targetScale = 1;
+
+          if (data.semantic) {
+            data.semantic.target = { ...data.semantic.base };
+          }
+          if (modelScreenTargets[idx]) {
+            modelScreenTargets[idx].semanticMode = "idle";
+          }
+        });
+
+        jellyDialog.setMode("idle");
+        semanticMetricsEl.classList.add("is-unmeasured");
+        metricStabilityEl.value = 0;
+        metricSpreadEl.value = 0;
+        metricStabilityValEl.textContent = "0%";
+        metricSpreadValEl.textContent = "0%";
+      }
+
+      function openSpecimenDetailView(index) {
+        selectedIndex = index;
+        isDetailView = true;
+        dragState.inspectYaw = 0;
+        dragState.inspectPitch = 0;
+        dataRain.triggerFeedSurge(index, 1.5);
+        triggerModelLightPulse(index, 0.95, true);
+
+        document.body.classList.add("is-detail-mode");
+        rotateToSelectedSubject();
+        updateReadoutUI();
+        jellyDialog.setMode(subjectGroups[index]?.userData?.semanticMode || "idle");
+        controlPanelEl.classList.add("is-visible");
+        controlPanelEl.setAttribute("aria-hidden", "false");
+        requestAnimationFrame(() => {
+          jellyDialog.resize(true);
+          jellyDialog.pulseSquish(0.32, 0.72, 0.45);
+        });
+        announceSelectedSubject(index);
+      }
+
+      function exitSpecimenDetailView() {
+        isDetailView = false;
+        resetAllSemanticEffects();
+        document.body.classList.remove("is-detail-mode");
+        controlPanelEl.classList.remove("is-visible");
+        controlPanelEl.setAttribute("aria-hidden", "true");
+        updateMarqueeAndSpeak(UI_TEXT.en.returnedPanorama);
+      }
+
+      function handleCanvasClick() {
+        raycaster.setFromCamera(pointer, camera);
+        const hit = raycaster.intersectObjects(clickTargets, false)[0];
+        if (!hit) {
+          if (isDetailView) exitSpecimenDetailView();
+          return;
+        }
+        const idx = hit.object.userData.subjectIndex;
+        if (typeof idx !== "number" || idx < 0) return;
+
+        openSpecimenDetailView(idx);
+      }
+
+      function updateReadoutUI(customState = "") {
+        const item = SEMANTIC_SAMPLES[selectedIndex];
+        const cfg = SUBJECT_CONFIGS[selectedIndex];
+        const dict = SEMANTIC_DICT[item.sample];
+        const subject = subjectGroups[selectedIndex];
+        if (!item || !cfg || !subject) return;
+
+        Array.from(specimenTabsEl.children).forEach((tab, idx) => {
+          tab.classList.toggle("is-active", idx === selectedIndex);
+        });
+
+        const t = UI_TEXT[uiLang];
+        const verdict = subject.userData.lastVerdict;
+        const displayName = uiLang === "en" ? cfg.enName : cfg.name;
+
+        const localizedState = verdict
+          ? verdict.meaning_type === "unrelated"
+            ? t.unrelatedLabel
+            : verdict.meaning_type === "original"
+              ? t.originalLabel
+              : t.internetLabel
+          : t.idleState;
+
+        sampleNameEl.textContent = displayName;
+        sampleStateEl.textContent = customState || localizedState;
+        sampleStateEl.classList.toggle("is-unrelated", !customState && verdict?.meaning_type === "unrelated");
+        sampleOriginDescEl.textContent = uiLang === "en" ? dict.enOrigin : dict.origin;
+        sampleCurrentDescEl.textContent = uiLang === "en" ? dict.enCurrent : dict.current;
+
+        aiVerdictBoxEl.classList.remove("mode-original", "mode-internet", "mode-unrelated", "is-idle");
+        if (verdict) {
+          const isUnrelated = verdict.meaning_type === "unrelated";
+          const isOrig = verdict.meaning_type === "original";
+          aiVerdictBoxEl.classList.add(
+            isUnrelated ? "mode-unrelated" : isOrig ? "mode-original" : "mode-internet"
+          );
+          verdictBadgeEl.textContent = isUnrelated
+            ? t.unrelatedLabel
+            : isOrig
+              ? t.originalLabel
+              : t.internetLabel;
+          verdictSourceEl.textContent = verdict.sourceLabel || "";
+          verdictReasonEl.textContent =
+            uiLang === "en"
+              ? verdict.reason_en || verdict.reason
+              : verdict.reason_zh || verdict.reason;
+
+          if (isUnrelated) {
+            semanticMetricsEl.classList.add("is-unmeasured");
+            metricStabilityEl.value = 0;
+            metricSpreadEl.value = 0;
+            metricStabilityValEl.textContent = "0%";
+            metricSpreadValEl.textContent = "0%";
+          } else {
+            const stabPct = Math.round((verdict.metrics?.stability ?? 0) * 100);
+            const spreadPct = Math.round((verdict.metrics?.spread ?? 0) * 100);
+            const wasHidden = semanticMetricsEl.classList.contains("is-unmeasured");
+            semanticMetricsEl.classList.remove("is-unmeasured");
+            animateMetricBar(metricStabilityEl, metricStabilityValEl, wasHidden ? 0 : metricStabilityEl.value, stabPct);
+            animateMetricBar(metricSpreadEl, metricSpreadValEl, wasHidden ? 0 : metricSpreadEl.value, spreadPct);
+          }
+        } else {
+          aiVerdictBoxEl.classList.add("is-idle");
+          verdictBadgeEl.textContent = "";
+          verdictSourceEl.textContent = "";
+          verdictReasonEl.textContent =
+            uiLang === "en"
+              ? `Write a sentence using "${cfg.enName}" — watch how the specimen responds to its literal root versus its internet meaning.`
+              : `用「${cfg.name}」写下一句话——观察这个语义生命体在原始本意与互联网新意之间的不同回应。`;
+
+          semanticMetricsEl.classList.add("is-unmeasured");
+          metricStabilityEl.value = 0;
+          metricSpreadEl.value = 0;
+          metricStabilityValEl.textContent = "0%";
+          metricSpreadValEl.textContent = "0%";
+        }
+
+        promptInputEl.placeholder = `${t.placeholderPrefix}${displayName}${t.placeholderSuffix}`;
+
+        presetChipsEl.innerHTML = "";
+        const presetList = cfg.presets[uiLang] || cfg.presets.en;
+        presetList.forEach((preset) => {
+          const chip = document.createElement("button");
+          chip.type = "button";
+          chip.className = "preset-chip";
+          const tagCls = preset.type === "original" ? "tag-origin" : "tag-internet";
+          chip.innerHTML = `<span class="chip-tag ${tagCls}">${preset.tag}:</span>${preset.text}`;
+          chip.addEventListener("click", () => {
+            promptInputEl.value = preset.text;
+            triggerContextExperiment(preset.text);
+          });
+          presetChipsEl.appendChild(chip);
+        });
+
+        requestAnimationFrame(() => jellyDialog.resize(false));
+      }
+
+      function animateMetricBar(meterEl, valEl, fromVal, toVal) {
+        if (!meterEl) return;
+        const start = performance.now();
+        const duration = 420;
+        const startV = Number(fromVal) || 0;
+        const targetV = Math.max(0, Math.min(100, Number(toVal) || 0));
+
+        function step(now) {
+          const p = Math.min(1, (now - start) / duration);
+          const eased = 1 - Math.pow(1 - p, 3);
+          const current = Math.round(startV + (targetV - startV) * eased);
+          meterEl.value = current;
+          if (valEl) valEl.textContent = `${current}%`;
+          if (p < 1) requestAnimationFrame(step);
+        }
+        requestAnimationFrame(step);
+      }
+
+      // ==================== 无缝径向脉冲 + 柔焦修面着色器（杜绝简化 GLB 膨胀撕裂） ====================
+      function triggerModelLightPulse(index, strength = 0.85, forceImmediate = false) {
+        const subject = subjectGroups[index];
+        if (!subject) return;
+        const data = subject.userData;
+        const now = performance.now() * 0.001;
+
+        if (!forceImmediate && now - data.lastPulseTime < 0.52) return;
+
+        data.lastPulseTime = now;
+        data.pulseTarget = Math.min(1.15, Math.max(data.pulseTarget, strength));
+        data.pulseWaveRadius = 0.0;
+      }
+
+      function attachSubtlePulseShader(model, subjectGroup, paletteHexArr) {
+        const colA = new THREE.Color(paletteHexArr[0]);
+        const colB = new THREE.Color(paletteHexArr[1]);
+        const colC = new THREE.Color(paletteHexArr[2]);
+
+        model.traverse((child) => {
+          if (!child.isMesh || child.userData.isClickTarget || child.userData.semanticEffect) return;
+
+          let geomCenter = new THREE.Vector3(0, 0, 0);
+          let geomRadius = 1.0;
+          if (child.geometry) {
+            child.geometry.computeBoundingSphere();
+            if (child.geometry.boundingSphere) {
+              geomCenter.copy(child.geometry.boundingSphere.center);
+              geomRadius = Math.max(0.0001, child.geometry.boundingSphere.radius);
+            }
+          }
+
+          const mats = Array.isArray(child.material) ? child.material : [child.material];
+
+          mats.forEach((mat) => {
+            if (!mat || mat.userData.hasPulseHook) return;
+            mat.userData.hasPulseHook = true;
+
+            const pulseUniforms = {
+              uWaveRadius: { value: 1.5 },
+              uPulseStrength: { value: 0 },
+              uBreathGlow: { value: 0 },
+              uExpandAmount: { value: 0 },
+              uPulseTime: { value: 0 },
+              uPulseColorA: { value: colA },
+              uPulseColorB: { value: colB },
+              uPulseColorC: { value: colC },
+              uGeomCenter: { value: geomCenter },
+              uGeomRadius: { value: geomRadius }
+            };
+            subjectGroup.userData.pulseShaders.push(pulseUniforms);
+
+            mat.onBeforeCompile = (shader) => {
+              shader.uniforms.uWaveRadius = pulseUniforms.uWaveRadius;
+              shader.uniforms.uPulseStrength = pulseUniforms.uPulseStrength;
+              shader.uniforms.uBreathGlow = pulseUniforms.uBreathGlow;
+              shader.uniforms.uExpandAmount = pulseUniforms.uExpandAmount;
+              shader.uniforms.uPulseTime = pulseUniforms.uPulseTime;
+              shader.uniforms.uPulseColorA = pulseUniforms.uPulseColorA;
+              shader.uniforms.uPulseColorB = pulseUniforms.uPulseColorB;
+              shader.uniforms.uPulseColorC = pulseUniforms.uPulseColorC;
+              shader.uniforms.uGeomCenter = pulseUniforms.uGeomCenter;
+              shader.uniforms.uGeomRadius = pulseUniforms.uGeomRadius;
+
+              // 使用连续中心径向向量场而非离散顶点法线，彻底消除减面 GLB 膨胀破面撕裂
+              shader.vertexShader =
+                `
+                uniform float uWaveRadius;
+                uniform float uPulseStrength;
+                uniform float uBreathGlow;
+                uniform float uExpandAmount;
+                uniform float uPulseTime;
+                uniform vec3 uGeomCenter;
+                uniform float uGeomRadius;
+                varying float vNormRadialDist;
+                varying float vWaveBand;
+                varying vec3 vLocalNormPos;
+                ` +
+                shader.vertexShader.replace(
+                  "#include <begin_vertex>",
+                  `
+                  #include <begin_vertex>
+                  vec3 relPos = (position - uGeomCenter) / uGeomRadius;
+                  vLocalNormPos = relPos;
+                  float radialLen = length(relPos);
+                  vNormRadialDist = clamp(radialLen, 0.0, 1.5);
+                  vec3 seamlessDir = radialLen > 0.0001 ? (relPos / radialLen) : vec3(0.0, 1.0, 0.0);
+                  vWaveBand = exp(-pow((vNormRadialDist - uWaveRadius) * 2.8, 2.0));
+
+                  // 本意：几乎不膨胀，仅保留极细微的呼吸微动；新意：柔和的轻盈浮动张力
+                  float pulseDisp = vWaveBand * uPulseStrength * 0.008;
+                  float breathDisp = uBreathGlow * 0.004;
+                  float expandWave = sin(relPos.y * 4.2 - uPulseTime * 2.4 + relPos.x * 2.2) * 0.5 + 0.5;
+                  float expandDisp = uExpandAmount * (0.018 + expandWave * 0.012);
+                  transformed += seamlessDir * ((pulseDisp + breathDisp + expandDisp) * uGeomRadius);
+                  `
+                );
+
+              shader.fragmentShader =
+                `
+                uniform float uWaveRadius;
+                uniform float uPulseStrength;
+                uniform float uBreathGlow;
+                uniform float uExpandAmount;
+                uniform float uPulseTime;
+                uniform vec3 uPulseColorA;
+                uniform vec3 uPulseColorB;
+                uniform vec3 uPulseColorC;
+                varying float vNormRadialDist;
+                varying float vWaveBand;
+                varying vec3 vLocalNormPos;
+                ` +
+                shader.fragmentShader.replace(
+                  "#include <opaque_fragment>",
+                  `
+                  vec3 safeNormal = gl_FrontFacing ? normalize(vNormal) : -normalize(vNormal);
+                  float viewDot = clamp(abs(dot(safeNormal, normalize(vViewPosition))), 0.0, 1.0);
+                  float fresnelRim = pow(1.0 - viewDot, 1.85);
+
+                  float waveOffset = clamp((vNormRadialDist - uWaveRadius) * 1.8 + 0.5, 0.0, 1.0);
+                  vec3 waveGrad = mix(uPulseColorC, uPulseColorB, smoothstep(0.0, 0.55, waveOffset));
+                  waveGrad = mix(waveGrad, uPulseColorA, smoothstep(0.5, 1.0, waveOffset));
+
+                  float iridPhase = vNormRadialDist * 1.6 - uWaveRadius * 1.2 + viewDot * 0.9 + vLocalNormPos.y * 0.65 + uPulseTime * 0.55;
+                  vec3 spectralShift = mix(uPulseColorA, uPulseColorB, sin(iridPhase * 3.14159) * 0.5 + 0.5);
+                  spectralShift = mix(spectralShift, uPulseColorC, cos(iridPhase * 2.6) * 0.5 + 0.5);
+
+                  vec3 richChroma = mix(waveGrad, spectralShift, 0.52);
+                  vec3 fairyMist = mix(uPulseColorA, vec3(1.0, 0.96, 1.0), 0.5);
+
+                  // 本意专属：纯净圣洁的月光暖金 + 珠光白呼吸光潮
+                  vec3 pureRootGlow = mix(vec3(0.86, 0.97, 1.0), vec3(1.0, 0.95, 0.78), 0.45 + 0.35 * sin(uPulseTime * 1.6));
+                  // 新意专属：高饱和度专属双色虹彩流动光带
+                  float cyberStripe = pow(0.5 + 0.5 * sin(vLocalNormPos.y * 7.5 - uPulseTime * 3.6 + vLocalNormPos.x * 3.0), 2.5);
+                  vec3 bloomChroma = mix(uPulseColorB, uPulseColorC, 0.5 + 0.5 * sin(uPulseTime * 2.2 + vLocalNormPos.y * 3.5));
+
+                  float coreGlow = exp(-vNormRadialDist * vNormRadialDist * 2.0) * (1.0 - viewDot * 0.3);
+                  float combinedStrength = clamp(uPulseStrength + uBreathGlow * 0.85, 0.0, 1.45);
+                  float totalMask = clamp((vWaveBand * 1.05 + coreGlow * 0.52 + fresnelRim * 0.72) * combinedStrength, 0.0, 1.0);
+
+                  if (!gl_FrontFacing) {
+                    outgoingLight = mix(outgoingLight, fairyMist * 0.78, 0.62);
+                  }
+
+                  vec3 stainedLight = outgoingLight * mix(vec3(1.0), richChroma * 1.55 + 0.14, totalMask * 0.72);
+                  outgoingLight =
+                    mix(stainedLight, richChroma * 0.82, totalMask * 0.42) +
+                    richChroma * (vWaveBand * 0.32 + fresnelRim * 0.28) * combinedStrength +
+                    fairyMist * (fresnelRim * 0.18) +
+                    pureRootGlow * (coreGlow * 0.74 + fresnelRim * 0.68 + vWaveBand * 0.62) * uBreathGlow +
+                    bloomChroma * (fresnelRim * 0.78 + cyberStripe * 0.36) * uExpandAmount;
+
+                  #include <opaque_fragment>
+                  `
+                );
+            };
+            mat.needsUpdate = true;
+          });
+        });
+      }
+
+      function updateModelSubtlePulse(subject, index, dt, time, isDimmedBackground) {
+        const data = subject.userData;
+
+        data.originalCurrent = THREE.MathUtils.lerp(data.originalCurrent, data.originalTarget, Math.min(1, dt * 3.8));
+        if (data.originalTarget === 0 && data.originalCurrent < 0.004) data.originalCurrent = 0;
+
+        let breathGlow = 0;
+        if (data.semanticMode === "original" || data.originalCurrent > 0.01) {
+          data.breathClock += dt;
+          const breathWave = 0.5 + 0.5 * Math.sin(data.breathClock * 2.15 - Math.PI * 0.5);
+          breathGlow = (0.34 + breathWave * 0.86) * data.originalCurrent;
+          if (data.semanticMode === "original" && data.pulseWaveRadius >= 1.48 && breathWave > 0.92) {
+            data.pulseWaveRadius = 0.0;
+            data.pulseTarget = Math.max(data.pulseTarget, 0.92);
+          }
+        }
+
+        data.expandCurrent = THREE.MathUtils.lerp(data.expandCurrent, data.expandTarget, Math.min(1, dt * 3.6));
+        if (data.expandTarget === 0 && data.expandCurrent < 0.004) data.expandCurrent = 0;
+        data.particleBurst = Math.max(0, data.particleBurst - dt * 0.65);
+
+        if (data.pulseTarget > data.pulseCurrent) {
+          data.pulseCurrent = THREE.MathUtils.lerp(data.pulseCurrent, data.pulseTarget, Math.min(1, dt * 14));
+          if (data.pulseTarget - data.pulseCurrent < 0.03) data.pulseTarget = 0;
+        } else {
+          data.pulseTarget = Math.max(0, data.pulseTarget - dt * 1.5);
+          data.pulseCurrent = Math.max(0, data.pulseCurrent * Math.exp(-dt * 2.0) - dt * 0.04);
+        }
+
+        if (data.pulseWaveRadius < 1.5) {
+          data.pulseWaveRadius += dt * (data.semanticMode === "original" ? 0.78 : 1.18 + data.pulseCurrent * 0.45);
+        }
+
+        const isUnrelated = data.semanticMode === "unrelated";
+        const dimFactor = isDimmedBackground ? 0.22 : isUnrelated ? 0.25 : 1;
+        const effectivePulse = Math.max(data.pulseCurrent, breathGlow * 0.85) * dimFactor;
+        const effectiveBreath = breathGlow * dimFactor;
+        const effectiveExpand = data.expandCurrent * dimFactor;
+
+        if (modelScreenTargets[index]) {
+          modelScreenTargets[index].pulseVisual = effectivePulse;
+        }
+
+        if (data.softCoreSprite) {
+          const targetCoreOp =
+            (isUnrelated ? 0.08 : 0.2 + effectiveBreath * 0.48 + effectiveExpand * 0.18) *
+            (isDimmedBackground ? 0.24 : 1);
+          data.softCoreSprite.material.opacity = THREE.MathUtils.lerp(
+            data.softCoreSprite.material.opacity,
+            targetCoreOp,
+            0.1
+          );
+          const coreScale = 1.92 + effectiveBreath * 0.2 + effectiveExpand * 0.24;
+          data.softCoreSprite.scale.set(coreScale, coreScale, 1);
+        }
+
+        if (data.pulseShaders && data.pulseShaders.length) {
+          for (let i = 0; i < data.pulseShaders.length; i++) {
+            const u = data.pulseShaders[i];
+            u.uWaveRadius.value = data.pulseWaveRadius;
+            u.uPulseStrength.value = effectivePulse;
+            u.uBreathGlow.value = effectiveBreath;
+            u.uExpandAmount.value = effectiveExpand;
+            u.uPulseTime.value = time;
+          }
+        }
+
+        return { effectivePulse, effectiveBreath, effectiveExpand };
+      }
+
+      // ==================== 上下分裂式 WebGL2 果冻对话框（统一 Dew 露珠奶白 · 忠实还原 Shadertoy 物理） ====================
+      function initJellyDialog() {
+        const panel = controlPanelEl;
+        const canvas = document.querySelector("#jellyDialogCanvas");
+        const nameplateEl = document.querySelector("#jellyNameplate");
+        const bodyEl = document.querySelector("#jellyBodyInner");
+        const inputPodEl = document.querySelector("#agentForm");
+
+        const noop = {
+          resize() {},
+          syncRects() {},
+          render() {},
+          setMode() {},
+          setInputFocused() {},
+          pulseSquish() {}
+        };
+
+        if (!panel || !canvas || !nameplateEl || !bodyEl || !inputPodEl) return noop;
+
+        const gl = canvas.getContext("webgl2", {
+          alpha: true,
+          premultipliedAlpha: true,
+          antialias: false,
+          powerPreference: "high-performance"
+        });
+
+        if (!gl) {
+          panel.classList.add("jelly-fallback");
+          return noop;
+        }
+
+        const hasFloatFbo = Boolean(gl.getExtension("EXT_color_buffer_float"));
+        const PAD = 56;
+
+        const vsSource = `#version 300 es
+          in vec2 p;
+          void main() {
+            gl_Position = vec4(p, 0.0, 1.0);
+          }
+        `;
+
+        // Buffer A: 还原原版 Shadertoy 按压与脉冲果冻应力累积
+        const fsBufASource = `#version 300 es
+          precision highp float;
+          out vec4 O;
+          uniform vec2 iResolution;
+          uniform vec4 iMouse;
+          uniform vec3 uImpulse;
+          uniform sampler2D iChannel0;
+
+          void main() {
+            vec2 uv = gl_FragCoord.xy / iResolution.xy;
+            float jelly = texture(iChannel0, uv).r;
+
+            if (iMouse.z > 0.0) {
+              vec2 m = iMouse.xy / iResolution.xy;
+              vec2 pm = iMouse.zw / iResolution.xy;
+              float speed = clamp(length(m - pm) * 42.0, 0.4, 8.5);
+              float pressure = exp(-distance(uv, m) * 14.5);
+              jelly = clamp(jelly + pressure * speed * 0.011 - 0.003, 0.0, 0.72);
+            } else {
+              jelly = max(jelly - 0.055, 0.0);
+            }
+
+            if (uImpulse.z > 0.001) {
+              float impPress = exp(-distance(uv, uImpulse.xy) * 11.5);
+              jelly = clamp(jelly + impPress * uImpulse.z * 0.12, 0.0, 0.72);
+            }
+
+            O = vec4(jelly, 0.0, 0.0, 1.0);
+          }
+        `;
+
+        // Image Pass: 统一 Dew 露珠奶白上下双果冻 + 2px Retina 纯白描边 + 零阴影
+        const fsImageSource = `#version 300 es
+          precision highp float;
+          out vec4 O;
+          uniform vec2 iResolution;
+          uniform float iTime;
+          uniform vec4 iMouse;
+          uniform float uDpr;
+          uniform vec2 uMainCenter;
+          uniform vec2 uMainHalf;
+          uniform vec2 uTabCenter;
+          uniform vec2 uTabHalf;
+          uniform vec2 uInputCenter;
+          uniform vec2 uInputHalf;
+          uniform float uInputFocus;
+          uniform vec3 uAccent;
+          uniform float uModeMix;
+          uniform sampler2D iChannel1;
+
+          float hash(vec2 p) {
+            return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+          }
+
+          float noise(vec2 p) {
+            vec2 i = floor(p);
+            vec2 f = fract(p);
+            vec2 u = f * f * (3.0 - 2.0 * f);
+            return mix(
+              mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+              mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
+              u.y
+            );
+          }
+
+          vec2 n2(vec2 p, float t, float o) {
+            return vec2(noise(p + t), noise(p + t + o));
+          }
+
+          float sdRoundRect(vec2 p, vec2 b, float r) {
+            vec2 q = abs(p) - b + r;
+            return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+          }
+
+          float smin(float a, float b, float k) {
+            float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+            return mix(b, a, h) - k * h * (1.0 - h);
+          }
+
+          float evalUpperSDF(vec2 p, float j) {
+            float rMain = min(0.068 + j * 0.018, min(uMainHalf.x, uMainHalf.y) * 0.72);
+            float dMain = sdRoundRect(p - uMainCenter, uMainHalf, rMain);
+            float rTab = min(uTabHalf.y * 0.92, uTabHalf.x * 0.85);
+            float dTab = sdRoundRect(p - uTabCenter, uTabHalf, rTab);
+            return smin(dMain, dTab, 0.024);
+          }
+
+          float evalInputSDF(vec2 p, float j) {
+            vec2 expandFocus = vec2(uInputFocus * 0.005, uInputFocus * 0.003);
+            float rIn = min(0.064 + j * 0.016, min(uInputHalf.x, uInputHalf.y) * 0.82);
+            return sdRoundRect(p - uInputCenter, uInputHalf + expandFocus, rIn);
+          }
+
+          float evalSceneSDF(vec2 p, float j) {
+            return min(evalUpperSDF(p, j), evalInputSDF(p, j));
+          }
+
+          void main() {
+            vec2 R = iResolution.xy;
+            vec2 U = gl_FragCoord.xy;
+            vec2 uv = (U - 0.5 * R) / R.y;
+            vec2 m = (iMouse.xy - 0.5 * R) / R.y;
+            float jelly = texture(iChannel1, U / R).r;
+
+            // 整体柔和有机蠕动（原版 Shadertoy 精髓，幅度克制自然）
+            vec2 uvB = uv + (n2(uv * 4.4, iTime * 0.65, 10.0) - 0.5) * 0.016;
+
+            // 沿 SDF 梯度方向计算按压弹性凹陷
+            vec2 e = vec2(0.0015, 0.0);
+            vec2 grad = vec2(
+              evalSceneSDF(uvB + e.xy, 0.0) - evalSceneSDF(uvB - e.xy, 0.0),
+              evalSceneSDF(uvB + e.yx, 0.0) - evalSceneSDF(uvB - e.yx, 0.0)
+            );
+            vec2 n = normalize(grad + 1e-5);
+
+            float mouseReach = exp(-distance(uvB, m) * 7.5);
+            vec2 uvD = uvB - n * jelly * mouseReach * 0.068;
+            uvD += (n2(uvD * 8.5, iTime * 1.15, 20.0) - 0.5) * jelly * 0.024;
+
+            float dUpper = evalUpperSDF(uvD, jelly);
+            float dLower = evalInputSDF(uvD, jelly);
+            float d = min(dUpper, dLower);
+            float isLower = step(dLower, dUpper);
+
+            // Retina 锐利抗锯齿与 2px 纯白利落描边
+            float px = 1.0 / R.y;
+            float cssPx = uDpr * px;
+            float aa = 1.2 * px;
+            float inside = 1.0 - smoothstep(-aa, aa, d);
+
+            // 统一 Dew 露珠奶白珠光果冻底色
+            vec3 dewBot = vec3(0.89, 0.92, 0.99);
+            vec3 dewTop = vec3(0.97, 0.92, 0.99);
+            vec3 baseFill = mix(dewBot, dewTop, clamp(uv.y + 0.55, 0.0, 1.0));
+            float pearlWave = 0.5 + 0.5 * sin(uv.x * 3.2 - uv.y * 2.0 + iTime * 0.5);
+            baseFill += vec3(0.02, 0.018, 0.03) * pearlWave;
+
+            vec3 tintedFill = mix(baseFill, mix(uAccent, vec3(1.0), 0.38), 0.26);
+            vec3 fillCol = mix(baseFill, tintedFill, uModeMix * 0.55);
+            fillCol += uAccent * (isLower * uInputFocus * 0.024);
+
+            float borderW = (2.0 + isLower * uInputFocus * 0.45) * cssPx;
+            float rimLine = smoothstep(-borderW - aa, -borderW + aa, d) * (1.0 - smoothstep(-aa, aa, d));
+            vec3 rimCol = mix(vec3(1.0), mix(vec3(1.0), uAccent, 0.34), uModeMix * 0.42);
+
+            float bodyAlpha = inside * clamp(0.78 + isLower * 0.03, 0.62, 0.9);
+            float finalAlpha = clamp(max(bodyAlpha, rimLine), 0.0, 0.98);
+            vec3 finalCol = mix(fillCol, rimCol, clamp(rimLine, 0.0, 1.0));
+
+            O = vec4(finalCol * finalAlpha, finalAlpha);
+          }
+        `;
+
+        function compileProgram(fsSrc) {
+          const prog = gl.createProgram();
+          const pairs = [
+            [gl.VERTEX_SHADER, vsSource],
+            [gl.FRAGMENT_SHADER, fsSrc]
+          ];
+          for (const [type, src] of pairs) {
+            const sh = gl.createShader(type);
+            gl.shaderSource(sh, src);
+            gl.compileShader(sh);
+            if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+              console.warn("Jelly shader error:", gl.getShaderInfoLog(sh));
+              return null;
+            }
+            gl.attachShader(prog, sh);
+          }
+          gl.linkProgram(prog);
+          if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+            console.warn("Jelly link error:", gl.getProgramInfoLog(prog));
+            return null;
+          }
+          return prog;
+        }
+
+        const progA = compileProgram(fsBufASource);
+        const progImg = compileProgram(fsImageSource);
+        if (!progA || !progImg) {
+          panel.classList.add("jelly-fallback");
+          return noop;
+        }
+
+        const quad = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+
+        const fbos = [0, 1].map(() => {
+          const tex = gl.createTexture();
+          const fbo = gl.createFramebuffer();
+          gl.bindTexture(gl.TEXTURE_2D, tex);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+          gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+          return { tex, fbo };
+        });
+
+        const locA = {
+          p: gl.getAttribLocation(progA, "p"),
+          iResolution: gl.getUniformLocation(progA, "iResolution"),
+          iMouse: gl.getUniformLocation(progA, "iMouse"),
+          uImpulse: gl.getUniformLocation(progA, "uImpulse"),
+          iChannel0: gl.getUniformLocation(progA, "iChannel0")
+        };
+
+        const locImg = {
+          p: gl.getAttribLocation(progImg, "p"),
+          iResolution: gl.getUniformLocation(progImg, "iResolution"),
+          iTime: gl.getUniformLocation(progImg, "iTime"),
+          iMouse: gl.getUniformLocation(progImg, "iMouse"),
+          uDpr: gl.getUniformLocation(progImg, "uDpr"),
+          uMainCenter: gl.getUniformLocation(progImg, "uMainCenter"),
+          uMainHalf: gl.getUniformLocation(progImg, "uMainHalf"),
+          uTabCenter: gl.getUniformLocation(progImg, "uTabCenter"),
+          uTabHalf: gl.getUniformLocation(progImg, "uTabHalf"),
+          uInputCenter: gl.getUniformLocation(progImg, "uInputCenter"),
+          uInputHalf: gl.getUniformLocation(progImg, "uInputHalf"),
+          uInputFocus: gl.getUniformLocation(progImg, "uInputFocus"),
+          uAccent: gl.getUniformLocation(progImg, "uAccent"),
+          uModeMix: gl.getUniformLocation(progImg, "uModeMix"),
+          iChannel1: gl.getUniformLocation(progImg, "iChannel1")
+        };
+
+        const modePalettes = {
+          idle: { accent: [0.68, 0.88, 1.0], mix: 0.0 },
+          original: { accent: [0.45, 0.94, 1.0], mix: 0.62 },
+          internet_new: { accent: [1.0, 0.56, 0.92], mix: 0.68 },
+          unrelated: { accent: [0.96, 0.78, 0.56], mix: 0.52 }
+        };
+
+        let targetInputFocus = 0;
+        let curInputFocus = 0;
+        let targetPalette = modePalettes.idle;
+        const curAccent = [...modePalettes.idle.accent];
+        let curModeMix = 0;
+
+        const jMouse = { x: 0, y: 0, px: 0, py: 0, down: false };
+        const impulse = { x: 0.5, y: 0.5, strength: 0 };
+
+        let bufW = 2;
+        let bufH = 2;
+        let cssW = 540;
+        let cssH = 440;
+        let dpr = 1;
+        let fboIdx = 0;
+
+        const targetRects = {
+          mainC: [0, 0.14],
+          mainH: [0.42, 0.25],
+          tabC: [-0.22, 0.42],
+          tabH: [0.16, 0.045],
+          inC: [0, -0.32],
+          inH: [0.42, 0.11]
+        };
+        const curRects = {
+          mainC: [...targetRects.mainC],
+          mainH: [...targetRects.mainH],
+          tabC: [...targetRects.tabC],
+          tabH: [...targetRects.tabH],
+          inC: [...targetRects.inC],
+          inH: [...targetRects.inH]
+        };
+
+        function toShaderRect(elRect, cRect) {
+          const cxPx = elRect.left - cRect.left + elRect.width * 0.5;
+          const cyPx = cRect.bottom - (elRect.top + elRect.height * 0.5);
+          return {
+            cx: (cxPx - cssW * 0.5) / cssH,
+            cy: (cyPx - cssH * 0.5) / cssH,
+            hx: (elRect.width * 0.5) / cssH,
+            hy: (elRect.height * 0.5) / cssH
+          };
+        }
+
+        function syncRects(snap = false) {
+          const cRect = canvas.getBoundingClientRect();
+          if (cRect.width < 10 || cRect.height < 10 || cssH < 10) return;
+
+          const mBox = toShaderRect(bodyEl.getBoundingClientRect(), cRect);
+          const tBox = toShaderRect(nameplateEl.getBoundingClientRect(), cRect);
+          const iBox = toShaderRect(inputPodEl.getBoundingClientRect(), cRect);
+
+          targetRects.mainC[0] = mBox.cx;
+          targetRects.mainC[1] = mBox.cy;
+          targetRects.mainH[0] = Math.max(0.08, mBox.hx);
+          targetRects.mainH[1] = Math.max(0.08, mBox.hy);
+
+          targetRects.tabC[0] = tBox.cx;
+          targetRects.tabC[1] = tBox.cy;
+          targetRects.tabH[0] = Math.max(0.05, tBox.hx);
+          targetRects.tabH[1] = Math.max(0.024, tBox.hy);
+
+          targetRects.inC[0] = iBox.cx;
+          targetRects.inC[1] = iBox.cy;
+          targetRects.inH[0] = Math.max(0.08, iBox.hx);
+          targetRects.inH[1] = Math.max(0.055, iBox.hy);
+
+          if (snap) {
+            curRects.mainC = [...targetRects.mainC];
+            curRects.mainH = [...targetRects.mainH];
+            curRects.tabC = [...targetRects.tabC];
+            curRects.tabH = [...targetRects.tabH];
+            curRects.inC = [...targetRects.inC];
+            curRects.inH = [...targetRects.inH];
+          }
+        }
+
+        function resize(snap = false) {
+          const pRect = panel.getBoundingClientRect();
+          if (pRect.width < 10 || pRect.height < 10) return;
+
+          dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+          cssW = Math.round(pRect.width + PAD * 2);
+          cssH = Math.round(pRect.height + PAD * 2);
+          const nextW = Math.max(2, Math.floor(cssW * dpr));
+          const nextH = Math.max(2, Math.floor(cssH * dpr));
+
+          if (nextW !== bufW || nextH !== bufH) {
+            bufW = nextW;
+            bufH = nextH;
+            canvas.width = bufW;
+            canvas.height = bufH;
+
+            fbos.forEach((b) => {
+              gl.bindTexture(gl.TEXTURE_2D, b.tex);
+              if (hasFloatFbo) {
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, bufW, bufH, 0, gl.RGBA, gl.FLOAT, null);
+              } else {
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, bufW, bufH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+              }
+              gl.bindFramebuffer(gl.FRAMEBUFFER, b.fbo);
+              gl.clearColor(0, 0, 0, 1);
+              gl.clear(gl.COLOR_BUFFER_BIT);
+            });
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+          }
+
+          syncRects(snap);
+        }
+
+        function updatePointerCoords(clientX, clientY) {
+          const rect = canvas.getBoundingClientRect();
+          if (rect.width < 10 || rect.height < 10) return;
+          jMouse.x = ((clientX - rect.left) / rect.width) * bufW;
+          jMouse.y = ((rect.bottom - clientY) / rect.height) * bufH;
+        }
+
+        // 仅在按下拖曳时注入应力（忠实还原 Shadertoy 原版，不随普通移动乱晃）
+        panel.addEventListener("pointerdown", (e) => {
+          updatePointerCoords(e.clientX, e.clientY);
+          jMouse.px = jMouse.x;
+          jMouse.py = jMouse.y;
+          jMouse.down = true;
+        });
+
+        window.addEventListener("pointermove", (e) => {
+          if (!jMouse.down) return;
+          updatePointerCoords(e.clientX, e.clientY);
+        });
+
+        window.addEventListener("pointerup", () => {
+          jMouse.down = false;
+        });
+
+        window.addEventListener("pointercancel", () => {
+          jMouse.down = false;
+        });
+
+        if (typeof ResizeObserver !== "undefined") {
+          const ro = new ResizeObserver(() => resize(false));
+          ro.observe(panel);
+          ro.observe(nameplateEl);
+          ro.observe(bodyEl);
+          ro.observe(inputPodEl);
+        }
+
+        function setMode(mode) {
+          targetPalette = modePalettes[mode] || modePalettes.idle;
+        }
+
+        function setInputFocused(focused) {
+          targetInputFocus = focused ? 1 : 0;
+          if (focused) pulseSquish(0.5, 0.16, 0.28);
+        }
+
+        function pulseSquish(nx = 0.5, ny = 0.5, strength = 0.45) {
+          impulse.x = nx;
+          impulse.y = ny;
+          impulse.strength = Math.max(impulse.strength, strength);
+        }
+
+        function render(timeSec) {
+          if (!isDetailView || bufW <= 2 || bufH <= 2) return;
+
+          syncRects(false);
+          for (let i = 0; i < 2; i++) {
+            curRects.mainC[i] += (targetRects.mainC[i] - curRects.mainC[i]) * 0.22;
+            curRects.mainH[i] += (targetRects.mainH[i] - curRects.mainH[i]) * 0.22;
+            curRects.tabC[i] += (targetRects.tabC[i] - curRects.tabC[i]) * 0.22;
+            curRects.tabH[i] += (targetRects.tabH[i] - curRects.tabH[i]) * 0.22;
+            curRects.inC[i] += (targetRects.inC[i] - curRects.inC[i]) * 0.22;
+            curRects.inH[i] += (targetRects.inH[i] - curRects.inH[i]) * 0.22;
+          }
+
+          curInputFocus += (targetInputFocus - curInputFocus) * 0.14;
+          for (let i = 0; i < 3; i++) {
+            curAccent[i] += (targetPalette.accent[i] - curAccent[i]) * 0.08;
+          }
+          curModeMix += (targetPalette.mix - curModeMix) * 0.08;
+
+          const mVec = [jMouse.x, jMouse.y, jMouse.down ? jMouse.px : -1, jMouse.down ? jMouse.py : -1];
+          jMouse.px = jMouse.x;
+          jMouse.py = jMouse.y;
+
+          // Pass 1: Buffer A 果冻应力缓冲
+          gl.bindFramebuffer(gl.FRAMEBUFFER, fbos[1 - fboIdx].fbo);
+          gl.viewport(0, 0, bufW, bufH);
+          gl.useProgram(progA);
+          gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+          gl.enableVertexAttribArray(locA.p);
+          gl.vertexAttribPointer(locA.p, 2, gl.FLOAT, false, 0, 0);
+          gl.uniform2f(locA.iResolution, bufW, bufH);
+          gl.uniform4fv(locA.iMouse, mVec);
+          gl.uniform3f(locA.uImpulse, impulse.x, impulse.y, impulse.strength);
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, fbos[fboIdx].tex);
+          gl.uniform1i(locA.iChannel0, 0);
+          gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+          impulse.strength *= 0.8;
+          if (impulse.strength < 0.004) impulse.strength = 0;
+
+          // Pass 2: 主果冻渲染
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+          gl.viewport(0, 0, bufW, bufH);
+          gl.clearColor(0, 0, 0, 0);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+          gl.useProgram(progImg);
+          gl.enableVertexAttribArray(locImg.p);
+          gl.vertexAttribPointer(locImg.p, 2, gl.FLOAT, false, 0, 0);
+          gl.uniform2f(locImg.iResolution, bufW, bufH);
+          gl.uniform1f(locImg.iTime, timeSec);
+          gl.uniform4fv(locImg.iMouse, mVec);
+          gl.uniform1f(locImg.uDpr, dpr);
+          gl.uniform2fv(locImg.uMainCenter, curRects.mainC);
+          gl.uniform2fv(locImg.uMainHalf, curRects.mainH);
+          gl.uniform2fv(locImg.uTabCenter, curRects.tabC);
+          gl.uniform2fv(locImg.uTabHalf, curRects.tabH);
+          gl.uniform2fv(locImg.uInputCenter, curRects.inC);
+          gl.uniform2fv(locImg.uInputHalf, curRects.inH);
+          gl.uniform1f(locImg.uInputFocus, curInputFocus);
+          gl.uniform3fv(locImg.uAccent, curAccent);
+          gl.uniform1f(locImg.uModeMix, curModeMix);
+          gl.activeTexture(gl.TEXTURE1);
+          gl.bindTexture(gl.TEXTURE_2D, fbos[1 - fboIdx].tex);
+          gl.uniform1i(locImg.iChannel1, 1);
+          gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+          fboIdx = 1 - fboIdx;
+        }
+
+        return { resize, syncRects, render, setMode, setInputFocused, pulseSquish };
+      }
+
+      // ==================== 60FPS 预烘焙发光字元缓存 + 纯字符远景雨（无连线）+ 双螺旋字链 ====================
+      function initDataRain(screenTargets) {
+        const backCanvas = document.querySelector("#dataRain");
+        const backCtx = backCanvas.getContext("2d");
+        const frontCanvas = document.querySelector("#dataFeedFront");
+        const frontCtx = frontCanvas.getContext("2d");
+
+        const bgStreams = [];
+        const helixRibbons = [];
+        const evoRings = [];
+
+        const baseChars = ["0", "1", "0", "1", "绷", "岸", "幻", "机", "O", "L", "|", "·"];
+
+        const STAMP_PALETTE = [
+          { fill: "rgb(246, 251, 255)", glow: "rgba(196, 244, 255, 0.85)", blur: 8 },
+          { fill: "rgb(206, 246, 255)", glow: "rgba(150, 232, 255, 0.72)", blur: 7 },
+          { fill: "rgb(255, 210, 242)", glow: "rgba(255, 170, 235, 0.72)", blur: 7 },
+          { fill: "rgb(232, 216, 255)", glow: "rgba(205, 180, 255, 0.72)", blur: 7 },
+          { fill: "rgb(255, 240, 196)", glow: "rgba(255, 220, 150, 0.72)", blur: 7 },
+          { fill: "rgb(44, 62, 130)", glow: "rgba(120, 165, 245, 0.65)", blur: 5 },
+          { fill: "rgb(78, 56, 144)", glow: "rgba(190, 135, 255, 0.65)", blur: 5 },
+          { fill: "rgb(242, 250, 255)", glow: "rgba(75, 110, 205, 0.92)", blur: 7 }
+        ];
+
+        const glyphStampCache = new Map();
+
+        function getGlyphStamp(ch, styleIdx) {
+          const key = `${ch}_${styleIdx}`;
+          let stamp = glyphStampCache.get(key);
+          if (stamp) return stamp;
+
+          const st = STAMP_PALETTE[styleIdx] || STAMP_PALETTE[0];
+          const cvs = document.createElement("canvas");
+          cvs.width = 48;
+          cvs.height = 48;
+          const c = cvs.getContext("2d");
+          c.textAlign = "center";
+          c.textBaseline = "middle";
+          c.font = '500 22px "Nightgazer", "PingFang SC", "Microsoft YaHei", sans-serif';
+          c.shadowColor = st.glow;
+          c.shadowBlur = st.blur;
+          c.fillStyle = st.fill;
+          c.fillText(ch, 24, 24);
+
+          glyphStampCache.set(key, cvs);
+          return cvs;
+        }
+
+        let width = 1;
+        let height = 1;
+        let cachedBgGrad = null;
+        let surgeTargetIdx = -1;
+        let surgeTimer = 0;
+
+        function resize() {
+          const vp = getSafeViewport();
+          width = vp.w;
+          height = vp.h;
+
+          [backCanvas, frontCanvas].forEach((cvs) => {
+            cvs.width = width;
+            cvs.height = height;
+            cvs.style.width = `${width}px`;
+            cvs.style.height = `${height}px`;
+          });
+          backCtx.setTransform(1, 0, 0, 1, 0, 0);
+          frontCtx.setTransform(1, 0, 0, 1, 0, 0);
+
+          cachedBgGrad = backCtx.createLinearGradient(0, 0, 0, height);
+          cachedBgGrad.addColorStop(0, "rgba(150, 164, 212, 0)");
+          cachedBgGrad.addColorStop(0.55, "rgba(136, 152, 202, 0.07)");
+          cachedBgGrad.addColorStop(1, "rgba(116, 138, 190, 0.16)");
+
+          populate();
+        }
+
+        function resetHelixRibbon(hr, slotIdx, laneIdx, initialRandom = false, customPhraseStr = null) {
+          const target = screenTargets[slotIdx] || screenTargets[0];
+          hr.targetIndex = slotIdx;
+          hr.laneIdx = laneIdx;
+
+          hr.basePhase = laneIdx * (Math.PI * 0.5) + slotIdx * 0.6;
+          hr.radiusRatio = laneIdx % 2 === 0 ? 1.16 : 1.34;
+          hr.turns = 1.65;
+          hr.ellipseRatio = 0.32;
+
+          hr.isPhrase = customPhraseStr !== null || laneIdx % 2 === 0;
+          if (hr.isPhrase) {
+            const phrasePool = target.phrases || ["SEMANTIC"];
+            hr.phraseText =
+              customPhraseStr || phrasePool[(laneIdx + Math.floor(Math.random() * 10)) % phrasePool.length];
+            hr.charCount = hr.phraseText.length;
+            hr.dThetaStep = 0.28;
+            hr.size = 14.5;
+            hr.baseAlpha = 0.78;
+          } else {
+            hr.phraseText = null;
+            hr.charCount = 9;
+            hr.dThetaStep = 0.26;
+            hr.size = 12.5;
+            hr.baseAlpha = 0.64;
+          }
+
+          hr.speed = 0.34 + (laneIdx % 2) * 0.04;
+          hr.colorStyleIdx = 1 + ((slotIdx + laneIdx) % 4);
+          hr.seed = slotIdx * 50 + laneIdx * 13;
+          hr.pulseFired = false;
+          hr.progress = initialRandom ? (laneIdx / 4) * 1.25 : -laneIdx * 0.08;
+        }
+
+        function evaluateEvolutionHelix(hr, p, target, time) {
+          const R_cyl = Math.max(52, target.radius * hr.radiusRatio);
+          const H_bottom = target.radius * 1.15;
+          const H_top = -target.radius * 0.65;
+
+          const totalAngle = hr.turns * Math.PI * 2;
+          const theta = hr.basePhase + time * 1.25 + p * totalAngle;
+
+          let r;
+          let localY;
+          if (p < 0.76) {
+            const tRise = p / 0.76;
+            const entryCurve = Math.min(1, tRise / 0.18);
+            r = R_cyl * (0.85 + 0.15 * entryCurve);
+            localY = H_bottom + (H_top - H_bottom) * tRise;
+          } else {
+            const tIn = Math.min(1, (p - 0.76) / 0.24);
+            const easeIn = tIn * tIn * (3 - 2 * tIn);
+            r = R_cyl * (1 - easeIn);
+            localY = H_top * (1 - easeIn);
+          }
+
+          const cx = Math.cos(theta) * r;
+          const cz = Math.sin(theta) * r;
+          const screenY = localY + cz * hr.ellipseRatio;
+          const edgeCleanFactor = 0.52 + 0.48 * Math.abs(Math.sin(theta));
+
+          return {
+            x: target.x + cx,
+            y: target.y + screenY,
+            z: cz,
+            zNorm: R_cyl > 0 ? cz / R_cyl : 0,
+            edgeCleanFactor
+          };
+        }
+
+        function populate() {
+          bgStreams.length = 0;
+          helixRibbons.length = 0;
+          evoRings.length = 0;
+
+          const bgCount = Math.max(8, Math.min(54, Math.floor(width / 26)));
+          for (let i = 0; i < bgCount; i += 1) {
+            const depthLayer = i % 3;
+            bgStreams.push({
+              x: (i + 0.5) * (width / bgCount) + (Math.random() - 0.5) * 6,
+              y: Math.random() * height,
+              count: 10 + (i % 5),
+              spacing: 17 + depthLayer * 1.5,
+              speed: 1.05 + Math.random() * 1.35,
+              alpha: depthLayer === 0 ? 0.78 : depthLayer === 1 ? 0.62 : 0.46,
+              size: depthLayer === 0 ? 14.0 : depthLayer === 1 ? 12.5 : 11.0,
+              maxY: height * (0.86 + Math.random() * 0.12),
+              styleIdx: i % 2 === 0 ? 5 : 6,
+              seed: i * 19
+            });
+          }
+
+          for (let m = 0; m < screenTargets.length; m += 1) {
+            for (let lane = 0; lane < 4; lane += 1) {
+              const hr = {};
+              resetHelixRibbon(hr, m, lane, true);
+              helixRibbons.push(hr);
+            }
+
+            evoRings.push({
+              targetIndex: m,
+              radiusRatio: 1.28,
+              yOffsetRatio: 0.52,
+              ellipseSquash: 0.3,
+              rotSpeed: 1.15,
+              angleOffset: m * 1.2,
+              slotCount: 14,
+              size: 13.5,
+              colorStyleIdx: 1 + (m % 4)
+            });
+          }
+        }
+
+        function render(timestamp, dt = 0.016) {
+          const t = timestamp * 0.001;
+          if (surgeTimer > 0) surgeTimer = Math.max(0, surgeTimer - dt);
+
+          backCtx.clearRect(0, 0, width, height);
+          frontCtx.clearRect(0, 0, width, height);
+
+          if (cachedBgGrad) {
+            backCtx.fillStyle = cachedBgGrad;
+            backCtx.fillRect(0, 0, width, height);
+          }
+
+          // 1. 远景背景字符雨（纯字符自由飘落，无垂直连线）
+          const charTick = Math.floor(t * 1.8);
+          for (let i = 0; i < bgStreams.length; i++) {
+            const bs = bgStreams[i];
+            bs.y += bs.speed;
+            const totalLen = bs.count * bs.spacing;
+            if (bs.y - totalLen > bs.maxY) {
+              bs.y = -Math.random() * height * 0.25;
+            }
+
+            const drawW = bs.size * 1.92;
+            for (let c = 0; c < bs.count; c++) {
+              const yPos = bs.y - c * bs.spacing;
+              if (yPos < -10 || yPos > bs.maxY) continue;
+
+              const topFade = Math.min(1, (yPos + 10) / 65);
+              const bottomFade = Math.min(1, (bs.maxY - yPos) / 105);
+              const tailFade = 1 - (c / bs.count) * 0.52;
+              const alpha = bs.alpha * topFade * bottomFade * tailFade;
+              if (alpha <= 0.03) continue;
+
+              const ch = baseChars[(bs.seed + c + charTick) % baseChars.length];
+              const stamp = getGlyphStamp(ch, c === 0 ? 7 : bs.styleIdx);
+              backCtx.globalAlpha = c === 0 ? Math.min(0.95, alpha * 1.25) : Math.min(0.88, alpha);
+              backCtx.drawImage(stamp, bs.x - drawW * 0.5, yPos - drawW * 0.5, drawW, drawW);
+            }
+          }
+
+          // 2. 模型柔和呼吸/扩散光晕（已移除生硬套环，仅保留纯净光晕）
+          frontCtx.save();
+          for (let m = 0; m < screenTargets.length; m++) {
+            const st = screenTargets[m];
+            const pVis = st.pulseVisual || 0;
+            if (
+              !Number.isFinite(st.x) ||
+              !Number.isFinite(st.y) ||
+              !Number.isFinite(st.radius) ||
+              st.visibleAlpha <= 0.15
+            ) {
+              continue;
+            }
+
+            if (pVis > 0.03) {
+              frontCtx.globalCompositeOperation = "screen";
+              const isOrig = st.semanticMode === "original";
+              const haloRadius = st.radius * (isOrig ? 1.38 + pVis * 0.48 : 1.18 + pVis * 0.42);
+              if (!Number.isFinite(haloRadius) || haloRadius <= 1) continue;
+              const haloAlpha = Math.min(0.46, pVis * (isOrig ? 0.4 : 0.26) * st.visibleAlpha);
+              const acc = isOrig ? [255, 248, 224] : st.accentRgb || [224, 64, 251];
+              const grad = frontCtx.createRadialGradient(st.x, st.y, 0, st.x, st.y, haloRadius);
+              grad.addColorStop(0, `rgba(${acc[0]}, ${acc[1]}, ${acc[2]}, ${haloAlpha})`);
+              grad.addColorStop(0.5, `rgba(${st.rgb[0]}, ${st.rgb[1]}, ${st.rgb[2]}, ${haloAlpha * 0.68})`);
+              grad.addColorStop(1, `rgba(${st.rgb[0]}, ${st.rgb[1]}, ${st.rgb[2]}, 0)`);
+              frontCtx.fillStyle = grad;
+              frontCtx.beginPath();
+              frontCtx.arc(st.x, st.y, haloRadius, 0, Math.PI * 2);
+              frontCtx.fill();
+            }
+          }
+          frontCtx.restore();
+
+          // 3. 底部水平进化字环
+          for (let r = 0; r < evoRings.length; r++) {
+            const ring = evoRings[r];
+            const target = screenTargets[ring.targetIndex] || screenTargets[0];
+            if (target.visibleAlpha <= 0.12 || !Number.isFinite(target.x) || !Number.isFinite(target.y)) continue;
+
+            const isSurging = surgeTimer > 0 && ring.targetIndex === surgeTargetIdx;
+            const pulseBoost = (target.pulseVisual || 0) * 0.75 + (isSurging ? 0.85 : 0);
+            ring.angleOffset += dt * ring.rotSpeed * (1 + pulseBoost);
+
+            const R_ring = Math.max(48, target.radius * ring.radiusRatio);
+            const ringCenterY = target.y + target.radius * ring.yOffsetRatio;
+            const tokenList = target.tokens || baseChars;
+            const scaleRatio = Math.max(0.8, Math.min(1.45, target.radius / 82));
+
+            for (let k = 0; k < ring.slotCount; k++) {
+              if (k % 4 === 3) continue;
+
+              const theta = ring.angleOffset + (k / ring.slotCount) * Math.PI * 2;
+              const sinT = Math.sin(theta);
+              const cosT = Math.cos(theta);
+              const sx = target.x + cosT * R_ring;
+              const sy = ringCenterY + sinT * R_ring * ring.ellipseSquash;
+
+              const sideClean = 0.45 + 0.55 * Math.abs(sinT);
+              const depthFactor = 0.75 + 0.32 * (sinT * 0.5 + 0.5);
+              const drawW = ring.size * scaleRatio * depthFactor * (0.85 + 0.15 * sideClean) * 1.85;
+              const alpha = (0.34 + pulseBoost * 0.25) * target.visibleAlpha * sideClean * depthFactor;
+
+              if (alpha <= 0.03) continue;
+              const ch = tokenList[(k + ring.targetIndex) % tokenList.length];
+              const stamp = getGlyphStamp(ch, ring.colorStyleIdx);
+
+              if (sinT <= 0) {
+                backCtx.globalAlpha = Math.min(0.75, alpha * 0.82);
+                backCtx.drawImage(stamp, sx - drawW * 0.5, sy - drawW * 0.5, drawW, drawW);
+              } else {
+                frontCtx.globalAlpha = Math.min(0.92, alpha * 1.15);
+                frontCtx.drawImage(stamp, sx - drawW * 0.5, sy - drawW * 0.5, drawW, drawW);
+              }
+            }
+          }
+
+          // 4. 同向双螺旋超进化字链
+          for (let i = 0; i < helixRibbons.length; i++) {
+            const hr = helixRibbons[i];
+            const target = screenTargets[hr.targetIndex] || screenTargets[0];
+            if (target.visibleAlpha <= 0.08 || !Number.isFinite(target.x) || !Number.isFinite(target.y)) continue;
+
+            const isSurging = surgeTimer > 0 && hr.targetIndex === surgeTargetIdx;
+            const speedMult = (target.weight || 1) * (isSurging ? 1.65 : 1);
+            hr.progress += dt * hr.speed * speedMult;
+
+            if (hr.progress > 1.34) {
+              resetHelixRibbon(hr, hr.targetIndex, hr.laneIdx, false);
+              continue;
+            }
+
+            const tokenList = target.tokens || baseChars;
+            const scaleRatio = Math.max(0.8, Math.min(1.5, target.radius / 82));
+            const dProgStep = hr.dThetaStep / (hr.turns * Math.PI * 2);
+
+            for (let c = 0; c < hr.charCount; c++) {
+              const p = hr.progress - c * dProgStep;
+              if (p < 0 || p >= 1.0) continue;
+
+              const pt = evaluateEvolutionHelix(hr, p, target, t);
+
+              if (c === 0 && !hr.pulseFired && p >= 0.82) {
+                hr.pulseFired = true;
+                if (target.onBeatPulse && target.semanticMode !== "unrelated") {
+                  target.onBeatPulse(isSurging ? 1.15 : hr.isPhrase ? 0.95 : 0.82, false);
+                }
+              }
+
+              const entryFade = Math.min(1, p / 0.14);
+              const tailFade = 1 - (c / hr.charCount) * 0.48;
+              let coreFade = 1;
+              if (p > 0.76) {
+                const u = (p - 0.76) / 0.24;
+                coreFade = 0.5 * (1 + Math.cos(u * Math.PI));
+              }
+
+              const isLeadChar = c === 0;
+              const alpha =
+                hr.baseAlpha *
+                entryFade *
+                tailFade *
+                coreFade *
+                pt.edgeCleanFactor *
+                target.visibleAlpha *
+                (isSurging ? 1.25 : 1);
+
+              if (alpha <= 0.025) continue;
+
+              const ch =
+                hr.isPhrase && hr.phraseText
+                  ? hr.phraseText[c % hr.phraseText.length]
+                  : tokenList[(hr.seed + c) % tokenList.length];
+
+              const depthScale = 0.82 + 0.28 * (pt.zNorm * 0.5 + 0.5);
+              const plungeScale = p > 0.76 ? 0.55 + 0.45 * (1 - (p - 0.76) / 0.24) : 1;
+              const drawW =
+                hr.size * scaleRatio * depthScale * plungeScale * (isLeadChar ? 1.15 : 1) * 1.85;
+
+              const styleIdx = isLeadChar ? 0 : ((hr.colorStyleIdx + (c % 2)) % 4) + 1;
+              const stamp = getGlyphStamp(ch, styleIdx);
+
+              if (pt.z <= 0 && p < 0.8) {
+                backCtx.globalAlpha = Math.min(0.78, alpha * 0.82);
+                backCtx.drawImage(stamp, pt.x - drawW * 0.5, pt.y - drawW * 0.5, drawW, drawW);
+              } else {
+                frontCtx.globalAlpha = Math.min(0.95, alpha * 1.15);
+                frontCtx.drawImage(stamp, pt.x - drawW * 0.5, pt.y - drawW * 0.5, drawW, drawW);
+              }
+            }
+          }
+
+          backCtx.globalAlpha = 1;
+          frontCtx.globalAlpha = 1;
+        }
+
+        function triggerFeedSurge(targetIndex, duration = 1.8) {
+          surgeTargetIdx = targetIndex;
+          surgeTimer = duration;
+        }
+
+        function injectCustomPhrase(targetIndex, text) {
+          const clean = text.replace(/\s+/g, "").slice(0, 14);
+          if (!clean) return;
+          let injected = 0;
+          for (let i = 0; i < helixRibbons.length && injected < 4; i++) {
+            const hr = helixRibbons[i];
+            if (hr.targetIndex === targetIndex) {
+              resetHelixRibbon(hr, targetIndex, hr.laneIdx, false, clean);
+              hr.progress = 0.06 + injected * 0.12;
+              injected++;
+            }
+          }
+        }
+
+        resize();
+        return { resize, render, triggerFeedSurge, injectCustomPhrase };
+      }
+
+      // ==================== 仙境柔雾灵核 + GPU 仙境星芒萤光花粉粒子 ====================
+      function createSoftMistTexture() {
+        const size = 128;
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+        grad.addColorStop(0, "rgba(255, 252, 255, 0.92)");
+        grad.addColorStop(0.28, "rgba(225, 244, 255, 0.55)");
+        grad.addColorStop(0.62, "rgba(244, 212, 255, 0.18)");
+        grad.addColorStop(1, "rgba(255, 255, 255, 0)");
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, size, size);
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.needsUpdate = true;
+        return tex;
+      }
+
+      function createIridescentEnvironment(glRenderer) {
+        const pmrem = new THREE.PMREMGenerator(glRenderer);
+        const envScene = new THREE.Scene();
+        envScene.background = new THREE.Color(0x161c38);
+
+        const stripCyan = new THREE.Mesh(
+          new THREE.PlaneGeometry(10, 4),
+          new THREE.MeshBasicMaterial({ color: 0x62ecff, side: THREE.DoubleSide })
+        );
+        stripCyan.position.set(-6, 3.5, 4);
+        stripCyan.lookAt(0, 0, 0);
+        envScene.add(stripCyan);
+
+        const stripPink = new THREE.Mesh(
+          new THREE.PlaneGeometry(10, 4),
+          new THREE.MeshBasicMaterial({ color: 0xff85e8, side: THREE.DoubleSide })
+        );
+        stripPink.position.set(6, 2.5, -3);
+        stripPink.lookAt(0, 0, 0);
+        envScene.add(stripPink);
+
+        const stripGold = new THREE.Mesh(
+          new THREE.PlaneGeometry(8, 3),
+          new THREE.MeshBasicMaterial({ color: 0xffe094, side: THREE.DoubleSide })
+        );
+        stripGold.position.set(0, -5, 3);
+        stripGold.lookAt(0, 0, 0);
+        envScene.add(stripGold);
+
+        const stripViolet = new THREE.Mesh(
+          new THREE.PlaneGeometry(9, 5),
+          new THREE.MeshBasicMaterial({ color: 0x9b7aff, side: THREE.DoubleSide })
+        );
+        stripViolet.position.set(0, 6, -4);
+        stripViolet.lookAt(0, 0, 0);
+        envScene.add(stripViolet);
+
+        const tex = pmrem.fromScene(envScene, 0.035).texture;
+        pmrem.dispose();
+        return tex;
+      }
+
+      function disposeObject3D(obj) {
+        obj.traverse((child) => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            (Array.isArray(child.material) ? child.material : [child.material]).forEach((mat) => {
+              if (mat.map) mat.map.dispose();
+              mat.dispose();
+            });
+          }
+        });
+      }
+
+      function createSemanticState(index) {
+        const item = SEMANTIC_SAMPLES[index];
+        const initial = {
+          stability: item.stability / 100,
+          mutation: item.mutation / 100,
+          spread: item.spread / 100
+        };
+        return {
+          base: { ...initial },
+          current: { ...initial },
+          target: { ...initial }
+        };
+      }
+
+      function createPlaceholderSubject(config, index) {
+        const group = new THREE.Group();
+        const coreMat = new THREE.MeshPhysicalMaterial({
+          color: config.color,
+          roughness: 0.24,
+          metalness: 0.08,
+          clearcoat: 0.78,
+          clearcoatRoughness: 0.16,
+          iridescence: 0.72,
+          iridescenceIOR: 1.32,
+          sheen: 0.55,
+          sheenColor: new THREE.Color(config.color),
+          transparent: true,
+          opacity: 0.86,
+          emissive: config.color,
+          emissiveIntensity: 0.3,
+          side: THREE.DoubleSide
+        });
+        const coreMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(0.95, 4), coreMat);
+        coreMesh.scale.set(1, 1.12 + index * 0.03, 1);
+        group.add(coreMesh);
+
+        const petalMat = new THREE.MeshPhysicalMaterial({
+          color: 0xffffff,
+          roughness: 0.14,
+          metalness: 0.16,
+          clearcoat: 0.7,
+          iridescence: 0.5,
+          transparent: true,
+          opacity: 0.82,
+          emissive: config.color,
+          emissiveIntensity: 0.26,
+          side: THREE.DoubleSide
+        });
+        for (let i = 0; i < 10; i += 1) {
+          const orb = new THREE.Mesh(new THREE.OctahedronGeometry(0.11 + (i % 3) * 0.03, 1), petalMat.clone());
+          const theta = (i / 10) * Math.PI * 2;
+          orb.position.set(Math.cos(theta) * 1.24, Math.sin(theta * 2 + index) * 0.36, Math.sin(theta) * 0.88);
+          group.add(orb);
+        }
+        return group;
+      }
+
+      function createLabelSprite(text) {
+        const canvas = document.createElement("canvas");
+        canvas.width = 512;
+        canvas.height = 128;
+        const ctx = canvas.getContext("2d");
+        ctx.clearRect(0, 0, 512, 128);
+        ctx.font = "500 42px Microsoft YaHei, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillStyle = "rgba(234, 252, 255, 0.9)";
+        ctx.shadowColor = "rgba(102, 240, 255, 0.78)";
+        ctx.shadowBlur = 18;
+        ctx.fillText(text, 256, 76);
+
+        const tex = new THREE.CanvasTexture(canvas);
+        const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.84, depthWrite: false });
+        const sprite = new THREE.Sprite(mat);
+        sprite.scale.set(1.9, 0.48, 1);
+        return sprite;
+      }
+
+      function normalizeSubjectModel(model, themeColorHex) {
+        model.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(model);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z) || 1;
+        const scale = 3.45 / maxDim;
+        model.scale.setScalar(scale);
+        model.position.sub(center.multiplyScalar(scale));
+
+        const themeColor = new THREE.Color(themeColorHex);
+
+        model.traverse((child) => {
+          if (!child.isMesh) return;
+          if (child.geometry && !child.geometry.attributes.normal) {
+            child.geometry.computeVertexNormals();
+          }
+
+          const hasVertexColor = !!child.geometry?.attributes?.color;
+          const origMats = Array.isArray(child.material) ? child.material : [child.material];
+
+          const enhancedMats = origMats.map((mat) => {
+            if (!mat) return mat;
+            if (mat.map) mat.map.colorSpace = THREE.SRGBColorSpace;
+
+            const isPlainWhite =
+              !mat.map &&
+              !hasVertexColor &&
+              mat.color &&
+              mat.color.r > 0.82 &&
+              mat.color.g > 0.82 &&
+              mat.color.b > 0.82;
+
+            const baseColor = isPlainWhite
+              ? themeColor.clone().lerp(new THREE.Color(0xd8e6ff), 0.25)
+              : (mat.color ? mat.color.clone() : new THREE.Color(0xffffff)).lerp(themeColor, 0.2);
+
+            const physicalMat = new THREE.MeshPhysicalMaterial({
+              color: baseColor,
+              map: mat.map || null,
+              normalMap: mat.normalMap || null,
+              roughnessMap: mat.roughnessMap || null,
+              metalnessMap: mat.metalnessMap || null,
+              vertexColors: hasVertexColor,
+              roughness: isPlainWhite ? 0.26 : Math.max(0.24, Math.min(mat.roughness ?? 0.34, 0.42)),
+              metalness: isPlainWhite ? 0.08 : Math.min(mat.metalness ?? 0.14, 0.32),
+              clearcoat: 0.72,
+              clearcoatRoughness: 0.2,
+              iridescence: 0.64,
+              iridescenceIOR: 1.32,
+              sheen: 0.56,
+              sheenColor: themeColor.clone().lerp(new THREE.Color(0xffffff), 0.35),
+              sheenRoughness: 0.4,
+              emissive: themeColor,
+              emissiveMap: mat.emissiveMap || mat.map || null,
+              emissiveIntensity: isPlainWhite ? 0.24 : 0.16,
+              envMapIntensity: 0.92,
+              transparent: true,
+              opacity: mat.opacity ?? 0.96,
+              side: THREE.DoubleSide
+            });
+
+            physicalMat.userData.originalOpacity = physicalMat.opacity;
+            physicalMat.userData.originalEmissiveIntensity = physicalMat.emissiveIntensity;
+            return physicalMat;
+          });
+
+          child.material = Array.isArray(child.material) ? enhancedMats : enhancedMats[0];
+        });
+      }
+
+      function setupSemanticParts(subjectRoot, model, config, index, isPlaceholder) {
+        const origin = new THREE.Vector3();
+        const parts = [];
+        const cachedMaterials = [];
+        const rootScale = model.scale?.x || 1;
+        const unitCompensation = isPlaceholder
+          ? Math.min(1, 0.08 / rootScale)
+          : Math.min(0.42, 0.028 / rootScale);
+
+        model.traverse((child) => {
+          if (!child.isMesh || child.userData.isClickTarget) return;
+          const worldPos = new THREE.Vector3();
+          child.getWorldPosition(worldPos);
+          subjectRoot.worldToLocal(worldPos);
+
+          const dir = worldPos.clone().sub(origin);
+          if (dir.lengthSq() < 0.001) {
+            dir.set(
+              Math.sin((index + 1) * 7.13 + parts.length),
+              Math.cos((index + 2) * 5.27 + parts.length * 0.7),
+              Math.sin((index + 3) * 3.91 + parts.length * 1.3)
+            );
+          }
+          dir.normalize();
+
+          const phase = index * 1.7 + parts.length * 0.83;
+          child.userData.semanticBase = {
+            position: child.position.clone(),
+            rotation: child.rotation.clone(),
+            scale: child.scale.clone(),
+            // 互联网新意时的「稍微散开」外扩向量：既有可见的轻盈散落感，又不过度撕裂
+            expandDir: dir.clone().multiplyScalar((isPlaceholder ? 0.46 : 0.28) * unitCompensation),
+            phase
+          };
+
+          (Array.isArray(child.material) ? child.material : [child.material]).forEach((mat) => {
+            if (mat) {
+              mat.userData.originalOpacity = mat.userData.originalOpacity ?? mat.opacity ?? 0.94;
+              mat.userData.originalEmissiveIntensity =
+                mat.userData.originalEmissiveIntensity ?? mat.emissiveIntensity ?? 0.18;
+              cachedMaterials.push(mat);
+            }
+          });
+          parts.push(child);
+        });
+
+        subjectRoot.userData.semanticParts = parts;
+        subjectRoot.userData.cachedMaterials = cachedMaterials;
+
+        if (!subjectRoot.userData.mutationBranches) {
+          subjectRoot.userData.mutationBranches = createMutationBranches(config, index);
+          subjectRoot.userData.fairyParticleField = createFairyStardustField(config, index);
+          subjectRoot.add(subjectRoot.userData.mutationBranches);
+          subjectRoot.add(subjectRoot.userData.fairyParticleField.group);
+        }
+
+        // 将发光粒子的诞生点贴合到当前模型真实表面，让粒子像从雕塑本身柔和散开的星光微尘
+        syncParticleOriginsToModel(subjectRoot, model);
+      }
+
+      // 从当前模型（占位或导入的 GLB）表面均匀采样顶点作为粒子出生坐标
+      function syncParticleOriginsToModel(subjectRoot, model) {
+        const field = subjectRoot?.userData?.fairyParticleField;
+        if (!field || !model) return;
+
+        subjectRoot.updateMatrixWorld(true);
+        model.updateMatrixWorld(true);
+        const invRoot = new THREE.Matrix4().copy(subjectRoot.matrixWorld).invert();
+        const meshMat = new THREE.Matrix4();
+        const sampled = [];
+
+        model.traverse((child) => {
+          if (!child.isMesh || child.userData.isClickTarget || child.userData.semanticEffect) return;
+          const posAttr = child.geometry?.attributes?.position;
+          if (!posAttr || posAttr.count === 0) return;
+
+          meshMat.multiplyMatrices(invRoot, child.matrixWorld);
+          const step = Math.max(1, Math.floor(posAttr.count / 120));
+          for (let i = 0; i < posAttr.count; i += step) {
+            const v = new THREE.Vector3(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i)).applyMatrix4(meshMat);
+            if (Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z)) {
+              sampled.push(v);
+            }
+          }
+        });
+
+        if (sampled.length < 12) return;
+
+        const applyToPoints = (pts) => {
+          const posAttr = pts.geometry.attributes.position;
+          const dirAttr = pts.geometry.attributes.aDir;
+          const vDir = new THREE.Vector3();
+          for (let i = 0; i < posAttr.count; i++) {
+            const p = sampled[(i * 7) % sampled.length];
+            posAttr.setXYZ(i, p.x, p.y, p.z);
+            vDir.copy(p);
+            if (vDir.lengthSq() < 0.001) {
+              vDir.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5);
+            }
+            vDir.normalize();
+            // 轻微随机扰动方向，呈现轻盈散开的自然感
+            vDir.x += (Math.random() - 0.5) * 0.35;
+            vDir.y += (Math.random() - 0.5) * 0.25 + 0.18;
+            vDir.z += (Math.random() - 0.5) * 0.35;
+            vDir.normalize();
+            dirAttr.setXYZ(i, vDir.x, vDir.y, vDir.z);
+          }
+          posAttr.needsUpdate = true;
+          dirAttr.needsUpdate = true;
+        };
+
+        applyToPoints(field.haloPoints);
+        applyToPoints(field.starPoints);
+        applyToPoints(field.motePoints);
+      }
+
+      // 互联网新意专属 3D 极细微光丝（克制柔美，衬托散开动效与发光粒子）
+      function createMutationBranches(config, index) {
+        const group = new THREE.Group();
+        const palette = config.particlePalette || config.pulsePalette;
+
+        for (let i = 0; i < 8; i += 1) {
+          const phase = index * 0.9 + i * 0.785;
+          const p0 = new THREE.Vector3(Math.sin(phase) * 0.38, Math.cos(phase * 1.7) * 0.4, Math.cos(phase) * 0.32);
+          const p1 = p0.clone().multiplyScalar(1.48);
+          p1.y += Math.sin(phase * 2.1) * 0.3;
+          const p2 = p0.clone().multiplyScalar(1.96 + (i % 3) * 0.18);
+          p2.y += Math.cos(phase * 1.3) * 0.42;
+
+          const curve = new THREE.CatmullRomCurve3([p0, p1, p2]);
+          const mat = new THREE.MeshBasicMaterial({
+            color: new THREE.Color(palette[i % palette.length]),
+            transparent: true,
+            opacity: 0,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+          });
+          const mesh = new THREE.Mesh(
+            new THREE.TubeGeometry(curve, 14, 0.0055 + (i % 2) * 0.0025, 6, false),
+            mat
+          );
+          mesh.userData.baseScale = 0.62 + (i % 3) * 0.1;
+          mesh.userData.phase = phase;
+          mesh.userData.semanticEffect = true;
+          group.add(mesh);
+        }
+        group.scale.setScalar(0.001);
+        group.visible = false;
+        return group;
+      }
+
+      // 三层仙境感 GPU 发光粒子系统：
+      // 1) 彩色萤火柔光晕（保留每个模型专属仙境配色）
+      // 2) 闪烁四芒星芒光辉（梦幻星光主角）
+      // 3) 细碎 Additive 流光星尘（赋予真实星光亮度与闪烁层次）
+      function createFairyStardustField(config, index) {
+        const group = new THREE.Group();
+        group.userData.semanticEffect = true;
+
+        const hexList = config.particlePalette || config.pulsePalette;
+        const modelPalette = hexList.map((hex) => new THREE.Color(hex));
+
+        function buildParticleGeometry(count, sizeMin, sizeMax, speedMin, speedMax) {
+          const positions = new Float32Array(count * 3);
+          const dirs = new Float32Array(count * 3);
+          const seeds = new Float32Array(count * 4);
+          const colors = new Float32Array(count * 3);
+
+          for (let i = 0; i < count; i++) {
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+            const dx = Math.sin(phi) * Math.cos(theta);
+            const dy = Math.cos(phi);
+            const dz = Math.sin(phi) * Math.sin(theta);
+
+            const startR = 0.42 + Math.random() * 0.52;
+            const i3 = i * 3;
+            const i4 = i * 4;
+
+            positions[i3] = dx * startR;
+            positions[i3 + 1] = dy * startR;
+            positions[i3 + 2] = dz * startR;
+
+            dirs[i3] = dx;
+            dirs[i3 + 1] = dy + 0.18;
+            dirs[i3 + 2] = dz;
+
+            seeds[i4] = Math.random(); // 生命周期偏移
+            seeds[i4 + 1] = speedMin + Math.random() * (speedMax - speedMin); // 飘散速度
+            seeds[i4 + 2] = sizeMin + Math.random() * (sizeMax - sizeMin); // 粒子基础尺寸
+            seeds[i4 + 3] = Math.random(); // 闪烁相位与旋转变化
+
+            const baseCol = modelPalette[(i + index) % modelPalette.length];
+            const nextCol = modelPalette[(i + index + 1) % modelPalette.length];
+            const col = baseCol.clone().lerp(nextCol, Math.random() * 0.42);
+            colors[i3] = col.r;
+            colors[i3 + 1] = col.g;
+            colors[i3 + 2] = col.b;
+          }
+
+          const geo = new THREE.BufferGeometry();
+          geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+          geo.setAttribute("aDir", new THREE.BufferAttribute(dirs, 3));
+          geo.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 4));
+          geo.setAttribute("aColor", new THREE.BufferAttribute(colors, 3));
+          return geo;
+        }
+
+        const sharedVertexShader = `
+          attribute vec3 aDir;
+          attribute vec4 aSeed;
+          attribute vec3 aColor;
+          uniform float uTime;
+          uniform float uBurstTime;
+          uniform float uExpand;
+          uniform float uPixelRatio;
+          uniform float uSizeMult;
+          uniform float uDriftDist;
+          uniform float uLift;
+          varying vec3 vColor;
+          varying float vAlpha;
+          varying float vSeedW;
+          varying float vRot;
+          varying float vTwinkle;
+
+          void main() {
+            float life = fract(aSeed.x + uTime * aSeed.y);
+            float burstBoost = exp(-max(0.0, uTime - uBurstTime) * 1.15) * 0.72;
+            float travel = life * (uDriftDist + burstBoost) * uExpand;
+
+            // 如林间流萤与星尘从模型表面轻盈散开、优雅螺旋上升
+            float swirlAngle = uTime * 0.92 + aSeed.x * 12.566 + life * 2.9;
+            vec3 swirlOffset = vec3(
+              cos(swirlAngle) * 0.28 * life,
+              life * uLift * uExpand,
+              sin(swirlAngle) * 0.28 * life
+            );
+
+            vec3 pos = position * (0.94 + 0.14 * uExpand) + aDir * travel + swirlOffset;
+            vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+            gl_Position = projectionMatrix * mvPosition;
+
+            float fadeIn = smoothstep(0.0, 0.16, life);
+            float fadeOut = 1.0 - smoothstep(0.56, 1.0, life);
+            float twinkle = 0.55 + 0.45 * sin(uTime * (3.6 + aSeed.y * 9.0) + aSeed.x * 37.7);
+
+            vColor = aColor;
+            vAlpha = fadeIn * fadeOut * (0.68 + 0.32 * twinkle);
+            vSeedW = aSeed.w;
+            vRot = uTime * (0.55 + aSeed.y * 1.1) + aSeed.x * 6.2831;
+            vTwinkle = twinkle;
+
+            // 适配相机距离（约 6.4）保证星芒与光晕清晰璀璨而非亚像素隐形
+            float sizeCurve = sin(life * 3.14159);
+            float sizeScale = (0.58 + 0.56 * sizeCurve) * (0.78 + 0.32 * twinkle);
+            gl_PointSize = clamp((aSeed.z * uSizeMult * sizeScale * uPixelRatio * 7.6) / max(1.2, -mvPosition.z), 7.0, 66.0);
+          }
+        `;
+
+        const pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
+
+        // 第 1 层：仙境彩色萤火柔光球（外层丝绒彩晕 + 内层晶莹珠光亮芯，在浅紫天空下光感通透）
+        const haloUniforms = {
+          uTime: { value: 0 },
+          uBurstTime: { value: -10 },
+          uExpand: { value: 0 },
+          uOpacity: { value: 0 },
+          uPixelRatio: { value: pixelRatio },
+          uSizeMult: { value: 1.0 },
+          uDriftDist: { value: 1.85 },
+          uLift: { value: 0.68 }
+        };
+        const haloMat = new THREE.ShaderMaterial({
+          uniforms: haloUniforms,
+          transparent: true,
+          depthWrite: false,
+          blending: THREE.NormalBlending,
+          vertexShader: sharedVertexShader,
+          fragmentShader: `
+            uniform float uOpacity;
+            varying vec3 vColor;
+            varying float vAlpha;
+            varying float vTwinkle;
+
+            void main() {
+              vec2 p = gl_PointCoord - 0.5;
+              float r = length(p);
+              if (r > 0.5) discard;
+
+              float edgeMask = smoothstep(0.5, 0.34, r);
+              float outerMist = exp(-r * r * 7.5) * edgeMask;
+              float innerGlow = exp(-r * r * 24.0);
+              float pearlCore = exp(-r * r * 88.0);
+
+              float alpha = (outerMist * 0.44 + innerGlow * 0.46 + pearlCore * 0.52) * vAlpha * uOpacity;
+              if (alpha < 0.01) discard;
+
+              // 外晕保持每个模型的饱和仙境彩光，中心柔和过渡至温润星白高光
+              vec3 brightCore = mix(vColor, vec3(1.0, 0.99, 1.0), 0.78 + 0.16 * vTwinkle);
+              vec3 finalCol = mix(vColor, brightCore, clamp(innerGlow * 0.48 + pearlCore * 0.92, 0.0, 1.0));
+              gl_FragColor = vec4(finalCol, clamp(alpha, 0.0, 0.92));
+            }
+          `
+        });
+
+        // 第 2 层：璀璨四芒仙境星芒（带彩色光晕托底的纤细星芒 + 旋转微斜副芒 + 闪烁星芯）
+        const starUniforms = {
+          uTime: { value: 0 },
+          uBurstTime: { value: -10 },
+          uExpand: { value: 0 },
+          uOpacity: { value: 0 },
+          uPixelRatio: { value: pixelRatio },
+          uSizeMult: { value: 1.0 },
+          uDriftDist: { value: 2.05 },
+          uLift: { value: 0.82 }
+        };
+        const starMat = new THREE.ShaderMaterial({
+          uniforms: starUniforms,
+          transparent: true,
+          depthWrite: false,
+          blending: THREE.NormalBlending,
+          vertexShader: sharedVertexShader,
+          fragmentShader: `
+            uniform float uOpacity;
+            varying vec3 vColor;
+            varying float vAlpha;
+            varying float vSeedW;
+            varying float vRot;
+            varying float vTwinkle;
+
+            void main() {
+              vec2 p = gl_PointCoord - 0.5;
+              float r = length(p);
+              if (r > 0.5) discard;
+
+              float c = cos(vRot * 0.55);
+              float s = sin(vRot * 0.55);
+              vec2 rp = vec2(c * p.x - s * p.y, s * p.x + c * p.y);
+              float ax = abs(rp.x);
+              float ay = abs(rp.y);
+
+              // 主四芒星光束（比例舒展清晰，不会亚像素消失）
+              float rayH = exp(-ay * 18.0) * smoothstep(0.49, 0.02, ax);
+              float rayV = exp(-ax * 18.0) * smoothstep(0.49, 0.02, ay);
+              float mainStar = rayH + rayV;
+
+              // 45° 细小副芒，增加精灵星尘的精致感
+              vec2 dp = vec2(rp.x + rp.y, rp.x - rp.y) * 0.7071;
+              float subStar = (exp(-abs(dp.y) * 28.0) * smoothstep(0.32, 0.02, abs(dp.x)) +
+                               exp(-abs(dp.x) * 28.0) * smoothstep(0.32, 0.02, abs(dp.y))) * 0.42;
+
+              float edgeMask = smoothstep(0.5, 0.36, r);
+              float colorBloom = exp(-r * r * 11.5) * edgeMask * 0.52;
+              float starCore = exp(-r * r * 64.0) * 1.15;
+
+              float lum = clamp(mainStar * 0.86 + subStar + colorBloom + starCore, 0.0, 1.0);
+              float alpha = lum * vAlpha * uOpacity;
+              if (alpha < 0.012) discard;
+
+              // 外缘与光晕染上每个模型的专属仙境色，星芒脊线与星芯闪耀剔透亮光
+              float coreFactor = clamp(starCore * 0.85 + mainStar * 0.48, 0.0, 1.0);
+              vec3 highlight = mix(vColor * 1.25 + vec3(0.28), vec3(1.0, 0.99, 0.96), 0.72 + 0.2 * vTwinkle);
+              vec3 finalCol = mix(vColor, highlight, coreFactor);
+              gl_FragColor = vec4(finalCol, clamp(alpha, 0.0, 0.96));
+            }
+          `
+        });
+
+        // 第 3 层：细碎流光精灵微尘（AdditiveBlending 叠加真实闪耀高光，点亮整体空气光感）
+        const moteUniforms = {
+          uTime: { value: 0 },
+          uBurstTime: { value: -10 },
+          uExpand: { value: 0 },
+          uOpacity: { value: 0 },
+          uPixelRatio: { value: pixelRatio },
+          uSizeMult: { value: 1.0 },
+          uDriftDist: { value: 2.35 },
+          uLift: { value: 0.95 }
+        };
+        const moteMat = new THREE.ShaderMaterial({
+          uniforms: moteUniforms,
+          transparent: true,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+          vertexShader: sharedVertexShader,
+          fragmentShader: `
+            uniform float uOpacity;
+            varying vec3 vColor;
+            varying float vAlpha;
+            varying float vTwinkle;
+
+            void main() {
+              vec2 p = gl_PointCoord - 0.5;
+              float r = length(p);
+              if (r > 0.5) discard;
+
+              float glow = exp(-r * r * 16.0) * 0.55;
+              float spark = exp(-r * r * 72.0) * (0.75 + 0.45 * vTwinkle);
+              float intensity = clamp(glow + spark, 0.0, 1.0);
+              float alpha = intensity * vAlpha * uOpacity;
+              if (alpha < 0.015) discard;
+
+              vec3 col = mix(vColor * 1.15, vec3(1.0, 0.99, 0.98), clamp(spark * 0.78, 0.0, 0.85));
+              gl_FragColor = vec4(col * alpha, alpha);
+            }
+          `
+        });
+
+        const haloPoints = new THREE.Points(buildParticleGeometry(120, 10.0, 21.0, 0.18, 0.38), haloMat);
+        const starPoints = new THREE.Points(buildParticleGeometry(105, 14.0, 29.0, 0.22, 0.44), starMat);
+        const motePoints = new THREE.Points(buildParticleGeometry(130, 5.5, 11.5, 0.25, 0.54), moteMat);
+
+        [haloPoints, starPoints, motePoints].forEach((pts, idx) => {
+          pts.userData.semanticEffect = true;
+          pts.frustumCulled = false;
+          pts.renderOrder = 14 + idx;
+          group.add(pts);
+        });
+
+        group.visible = false;
+
+        return {
+          group,
+          haloPoints,
+          starPoints,
+          motePoints,
+          haloUniforms,
+          starUniforms,
+          moteUniforms
+        };
+      }
+
+      function burstFairyStardust(subject) {
+        const field = subject?.userData?.fairyParticleField;
+        if (!field) return;
+        const now = performance.now() * 0.001;
+        field.haloUniforms.uBurstTime.value = now;
+        field.starUniforms.uBurstTime.value = now;
+        field.moteUniforms.uBurstTime.value = now;
+      }
+
+      function createAmbientParticles() {
+        const count = 420;
+        const positions = new Float32Array(count * 3);
+        const colors = new Float32Array(count * 3);
+        const colorA = new THREE.Color(0xd2eeff);
+        const colorB = new THREE.Color(0xf6dcff);
+
+        for (let i = 0; i < count; i += 1) {
+          positions[i * 3] = (Math.random() - 0.5) * 16;
+          positions[i * 3 + 1] = Math.random() * 5.4 + 0.1;
+          positions[i * 3 + 2] = (Math.random() - 0.5) * 12;
+          const col = colorA.clone().lerp(colorB, Math.random());
+          colors[i * 3] = col.r;
+          colors[i * 3 + 1] = col.g;
+          colors[i * 3 + 2] = col.b;
+        }
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+        geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+        const mat = new THREE.PointsMaterial({
+          size: 0.026,
+          vertexColors: true,
+          transparent: true,
+          opacity: 0.56,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        });
+        return { points: new THREE.Points(geo, mat) };
+      }
+
+      function pickFiniteNormalized(...values) {
+        const found = values.find((v) => Number.isFinite(Number(v)));
+        return clamp01(Number(found ?? 0));
+      }
+
+      // 顶部循环字幕始终保持英文展示（已关闭 AI 语音播报，保持画面静谧）
+      function updateMarqueeAndSpeak(text) {
+        if (!agentMarqueeEl || !agentMarqueeTextEl) return;
+        agentMarqueeTextEl.textContent = `Semantic Geneticist :: ${text}`;
+        agentMarqueeEl.classList.add("is-visible");
+        agentMarqueeTextEl.style.animation = "none";
+        void agentMarqueeTextEl.offsetWidth;
+        agentMarqueeTextEl.style.animation = "";
+      }
+
+      function showWelcomeMessage() {
+        if (appState.welcomeShown) return;
+        appState.welcomeShown = true;
+        updateMarqueeAndSpeak(UI_TEXT.en.welcome);
+      }
+
+      function setSubjectSemanticTarget(index, metrics) {
+        const subject = subjectGroups[index];
+        if (subject?.userData.semantic) {
+          subject.userData.semantic.target = {
+            stability: clamp01(metrics.stability),
+            mutation: clamp01(metrics.mutation),
+            spread: clamp01(metrics.spread)
+          };
+        }
+      }
+
+      function clamp01(val) {
+        return Math.max(0, Math.min(1, val));
+      }
+
+      function updateLoadingStatus() {
+        const loadedCount = subjectGroups.filter((g) => g.userData.loaded).length;
+        if (loadedCount > 0) {
+          statusEl.textContent = `GLB ${loadedCount}/${SUBJECT_CONFIGS.length}`;
+          if (loadedCount >= SUBJECT_CONFIGS.length) {
+            glbImportBannerEl.classList.add("is-hidden");
+          }
+        } else {
+          statusEl.textContent = "Preview";
+        }
+
+        if (appState.frameReady && subjectGroups.length >= SUBJECT_CONFIGS.length) {
+          window.setTimeout(showWelcomeMessage, 600);
+        }
+      }
+
+      function rotateToSelectedSubject() {
+        const subject = subjectGroups[selectedIndex];
+        if (subject) {
+          dragState.targetRotation = Math.PI / 2 - subject.userData.baseOrbitAngle;
+        }
+      }
+
+      function announceSelectedSubject(index) {
+        const cfg = SUBJECT_CONFIGS[index];
+        const dict = SEMANTIC_DICT[cfg.name];
+        if (!cfg || !dict) return;
+        updateMarqueeAndSpeak(
+          `Selected "${cfg.enName}". Original meaning: ${dict.enOrigin} Internet meaning: ${dict.enCurrent}`
+        );
+      }
+
+      function wrapAngle(angle) {
+        return Math.atan2(Math.sin(angle), Math.cos(angle));
+      }
+
+      function updateSubjectMaterialState(subject, userData, hoverBoost, isDimmedBackground, effectiveBreath) {
+        const bgDimFactor = isDimmedBackground ? 0.26 : 1;
+
+        if (userData.labelSprite) {
+          const targetLabelOp = isDetailView ? 0 : 0.84;
+          userData.labelSprite.material.opacity = THREE.MathUtils.lerp(
+            userData.labelSprite.material.opacity,
+            targetLabelOp,
+            0.1
+          );
+        }
+
+        const isUnrelated = userData.semanticMode === "unrelated";
+        const breathEmissiveBoost = userData.semanticMode === "original" ? effectiveBreath * 0.62 : 0;
+        const expandEmissiveBoost = userData.expandCurrent * 0.32;
+        const mats = userData.cachedMaterials;
+
+        for (let i = 0; i < mats.length; i++) {
+          const mat = mats[i];
+          if ("opacity" in mat) {
+            const origOpacity = mat.userData.originalOpacity ?? 0.94;
+            const targetOp = isUnrelated ? origOpacity * 0.58 : origOpacity;
+            mat.opacity = THREE.MathUtils.lerp(mat.opacity, targetOp * bgDimFactor, 0.08);
+          }
+          if ("emissiveIntensity" in mat) {
+            const origEmissive = mat.userData.originalEmissiveIntensity ?? 0.2;
+            const targetEmissive = isUnrelated
+              ? origEmissive * 0.32
+              : origEmissive + breathEmissiveBoost + expandEmissiveBoost + hoverBoost * 0.35;
+            mat.emissiveIntensity = THREE.MathUtils.lerp(
+              mat.emissiveIntensity,
+              targetEmissive * bgDimFactor,
+              0.14
+            );
+          }
+        }
+      }
+
+      const tempDriftVec = new THREE.Vector3();
+      const tempBranchScale = new THREE.Vector3();
+      const tempSubjectScale = new THREE.Vector3();
+      const tempTargetPos = new THREE.Vector3();
+      const tempProjVec = new THREE.Vector3();
+
+      function animateSemanticParts(subject, time, dt, isDimmedBackground) {
+        const data = subject.userData;
+        if (!data.semantic) return;
+
+        const cur = data.semantic.current;
+        const tgt = data.semantic.target;
+        cur.stability = THREE.MathUtils.lerp(cur.stability, tgt.stability, 0.05);
+        cur.mutation = THREE.MathUtils.lerp(cur.mutation, tgt.mutation, 0.05);
+        cur.spread = THREE.MathUtils.lerp(cur.spread, tgt.spread, 0.05);
+
+        const expand = data.expandCurrent;
+        const isPlaceholder = data.placeholder;
+        const parts = data.semanticParts;
+
+        for (let i = 0; i < parts.length; i++) {
+          const part = parts[i];
+          const base = part.userData.semanticBase;
+          if (!base) continue;
+
+          if (expand > 0.002) {
+            // 互联网新意：各部件沿外扩方向柔和散开并轻盈悬浮微晃
+            const waveSlow = Math.sin(time * 1.9 + base.phase);
+            const driftAmp = (isPlaceholder ? 0.075 : 0.032) * expand;
+            tempDriftVec.set(
+              Math.cos(time * 1.35 + base.phase) * driftAmp,
+              Math.sin(time * 1.2 + base.phase * 1.2) * driftAmp + 0.025 * expand,
+              Math.sin(time * 1.4 + base.phase * 0.8) * driftAmp
+            );
+
+            const openAmount = expand * (1.0 + 0.16 * waveSlow);
+            part.position
+              .copy(base.position)
+              .addScaledVector(base.expandDir, openAmount)
+              .add(tempDriftVec);
+
+            const rotAmp = isPlaceholder ? 0.28 : 0.12;
+            part.rotation.set(
+              base.rotation.x + expand * Math.sin(base.phase + time * 0.7) * rotAmp,
+              base.rotation.y + expand * Math.cos(base.phase * 0.9 + time * 0.8) * rotAmp * 1.15,
+              base.rotation.z + expand * Math.sin(base.phase * 1.3 + time * 0.65) * rotAmp
+            );
+
+            const scaleMul = 1 - expand * (isPlaceholder ? 0.03 : 0.015) + waveSlow * 0.014 * expand;
+            part.scale.copy(base.scale).multiplyScalar(Math.max(0.86, scaleMul));
+          } else {
+            part.position.lerp(base.position, 0.16);
+            part.rotation.x = THREE.MathUtils.lerp(part.rotation.x, base.rotation.x, 0.16);
+            part.rotation.y = THREE.MathUtils.lerp(part.rotation.y, base.rotation.y, 0.16);
+            part.rotation.z = THREE.MathUtils.lerp(part.rotation.z, base.rotation.z, 0.16);
+            part.scale.lerp(base.scale, 0.16);
+          }
+        }
+
+        // 互联网新意专属：极细微光丝（柔和衬托散开效果）
+        if (data.mutationBranches) {
+          if (expand > 0.015) {
+            data.mutationBranches.visible = true;
+            const branchScale = Math.max(0.001, expand * 0.8);
+            tempBranchScale.setScalar(branchScale);
+            data.mutationBranches.scale.lerp(tempBranchScale, 0.08);
+            data.mutationBranches.rotation.y += dt * (0.36 + expand * 0.45);
+            const targetOp = expand * (isDimmedBackground ? 0.06 : 0.26);
+            for (let b = 0; b < data.mutationBranches.children.length; b++) {
+              const mat = data.mutationBranches.children[b].material;
+              if (mat) mat.opacity = THREE.MathUtils.lerp(mat.opacity, targetOp, 0.08);
+            }
+          } else {
+            data.mutationBranches.visible = false;
+            data.mutationBranches.scale.setScalar(0.001);
+          }
+        }
+
+        // 互联网新意专属：三层仙境发光粒子（彩色萤火柔光晕 + 璀璨四芒星芒 + 细碎流光微尘）
+        const fairyField = data.fairyParticleField;
+        if (fairyField) {
+          const active = expand > 0.012;
+          fairyField.group.visible = active;
+          if (active) {
+            fairyField.haloUniforms.uTime.value = time;
+            fairyField.haloUniforms.uExpand.value = expand;
+            fairyField.starUniforms.uTime.value = time;
+            fairyField.starUniforms.uExpand.value = expand;
+            fairyField.moteUniforms.uTime.value = time;
+            fairyField.moteUniforms.uExpand.value = expand;
+
+            const dimMul = isDimmedBackground ? 0.22 : 1.0;
+            fairyField.haloUniforms.uOpacity.value = THREE.MathUtils.lerp(
+              fairyField.haloUniforms.uOpacity.value,
+              expand * 0.92 * dimMul,
+              0.09
+            );
+            fairyField.starUniforms.uOpacity.value = THREE.MathUtils.lerp(
+              fairyField.starUniforms.uOpacity.value,
+              expand * 1.0 * dimMul,
+              0.09
+            );
+            fairyField.moteUniforms.uOpacity.value = THREE.MathUtils.lerp(
+              fairyField.moteUniforms.uOpacity.value,
+              expand * 0.88 * dimMul,
+              0.09
+            );
+            fairyField.group.rotation.y += dt * (0.16 + expand * 0.22);
+          } else {
+            fairyField.haloUniforms.uOpacity.value = 0;
+            fairyField.starUniforms.uOpacity.value = 0;
+            fairyField.moteUniforms.uOpacity.value = 0;
+          }
+        }
+      }
+
+      let lastFrameTime = 0;
+
+      function animate(timestamp = 0) {
+        const vp = getSafeViewport();
+        if (vp.w !== lastSyncedW || vp.h !== lastSyncedH) {
+          syncViewportSize();
+        }
+
+        const time = timestamp * 0.001;
+        const dt = Math.min(0.05, Math.max(0.001, time - lastFrameTime || 0.016));
+        lastFrameTime = time;
+
+        camera.lookAt(0, 1.05, -0.2);
+        camera.updateMatrixWorld();
+
+        dragState.rotation = THREE.MathUtils.lerp(
+          dragState.rotation,
+          dragState.targetRotation,
+          dragState.active ? 0.08 : 0.14
+        );
+        ambientParticles.points.rotation.y = time * 0.025;
+        ambientParticles.points.position.y = Math.sin(time * 0.65) * 0.08;
+
+        raycaster.setFromCamera(pointer, camera);
+        const hits = raycaster.intersectObjects(clickTargets, false);
+        hoveredIndex = hits.length ? hits[0].object.userData.subjectIndex : -1;
+
+        const isMobile = vp.w <= 820;
+        let maxFocalIntensity = 0;
+
+        for (let idx = 0; idx < subjectGroups.length; idx++) {
+          const subject = subjectGroups[idx];
+          const data = subject.userData;
+          const isSelected = selectedIndex === idx;
+          const hoverBoost = hoveredIndex === idx ? 0.52 : 0;
+          const orbitAngle = data.baseOrbitAngle + dragState.rotation;
+          const relAngle = wrapAngle(orbitAngle - Math.PI / 2);
+          const frontFactor = (Math.cos(relAngle) + 1) * 0.5;
+          const floatOffset = Math.sin(time * data.speed + idx) * (0.13 + data.energy * 0.06);
+
+          const isDimmedBackground = isDetailView && !isSelected;
+          const { effectivePulse, effectiveBreath, effectiveExpand } = updateModelSubtlePulse(
+            subject,
+            idx,
+            dt,
+            time,
+            isDimmedBackground
+          );
+          // 原始本意：大幅克制膨胀幅度（仅约 1.5% 极柔呼吸感）；互联网新意：靠部件微散与星光粒子体现绽放
+          const breathScaleBonus =
+            data.semanticMode === "original"
+              ? effectiveBreath * 0.016
+              : (data.pulseCurrent || 0) * 0.012 + effectiveExpand * (data.placeholder ? 0.035 : 0.02);
+
+          let targetScale;
+
+          if (isDetailView) {
+            if (isSelected) {
+              const heroX = isMobile ? 0 : -1.32;
+              const floatAmp = data.semanticMode === "internet_new" ? 0.085 : 0.04;
+              const heroY = (isMobile ? 2.05 : 1.42) + Math.sin(time * (data.semanticMode === "internet_new" ? 2.2 : 1.35)) * floatAmp;
+              const heroZ = isMobile ? 2.45 : 3.05;
+              tempTargetPos.set(heroX, heroY, heroZ);
+              targetScale = data.targetScale * (isMobile ? 1.12 : 1.42) + breathScaleBonus;
+
+              // 原始本意：沉静缓转；互联网新意：灵动跃动旋转
+              const spinRate =
+                data.semanticMode === "original"
+                  ? 0.0045
+                  : data.semanticMode === "internet_new"
+                    ? 0.018
+                    : 0.008 + data.energy * 0.005;
+              subject.rotation.y += spinRate + dragState.inspectYaw * 0.15;
+              dragState.inspectYaw *= 0.85;
+              subject.rotation.x = THREE.MathUtils.lerp(subject.rotation.x, dragState.inspectPitch, 0.12);
+              subject.rotation.z = THREE.MathUtils.lerp(
+                subject.rotation.z,
+                Math.sin(time * (data.semanticMode === "internet_new" ? 1.8 : 0.8) + idx) *
+                  (data.semanticMode === "internet_new" ? 0.075 : data.semanticMode === "original" ? 0.01 : data.energy * 0.035),
+                0.1
+              );
+            } else {
+              tempTargetPos.set(
+                Math.sin(relAngle) * 4.8,
+                data.baseY + floatOffset * 0.5 + 0.32,
+                -3.9 - (1 - frontFactor) * 1.4
+              );
+              targetScale = data.targetScale * 0.34;
+              subject.rotation.x = THREE.MathUtils.lerp(subject.rotation.x, 0, 0.08);
+              subject.rotation.y += 0.006;
+            }
+          } else {
+            tempTargetPos.set(
+              Math.sin(relAngle) * 3.75,
+              data.baseY + floatOffset + frontFactor * 0.22,
+              frontFactor * 2.45 - 2.2
+            );
+            targetScale =
+              data.targetScale * (0.56 + frontFactor * 0.44) +
+              (hoveredIndex === idx ? 0.08 : 0) +
+              breathScaleBonus;
+            subject.rotation.x = THREE.MathUtils.lerp(subject.rotation.x, 0, 0.08);
+            subject.rotation.y += 0.012 + data.energy * 0.007;
+            subject.rotation.z = Math.sin(time * 0.8 + idx) * data.energy * 0.06;
+          }
+
+          subject.position.lerp(tempTargetPos, 0.075);
+          tempSubjectScale.setScalar(targetScale);
+          subject.scale.lerp(tempSubjectScale, 0.075);
+          subject.updateMatrixWorld();
+
+          const lightWant = effectivePulse * 2.4 + effectiveBreath * 1.5;
+          if ((isDetailView && isSelected) || (!isDetailView && lightWant > maxFocalIntensity)) {
+            maxFocalIntensity = lightWant;
+            focalPulseLight.position.copy(subject.position);
+            focalPulseLight.position.z += 0.45;
+            focalPulseLight.color.copy(data.pulseColorA).lerp(data.pulseColorB, 0.35 + effectiveExpand * 0.45);
+          }
+
+          subject.getWorldPosition(tempProjVec);
+          tempProjVec.project(camera);
+          const screenTarget = modelScreenTargets[idx];
+          if (screenTarget) {
+            const projX = (tempProjVec.x * 0.5 + 0.5) * vp.w;
+            const projY = (-tempProjVec.y * 0.5 + 0.5) * vp.h;
+            const projRadius = isDetailView && isSelected ? 132 : 56 + frontFactor * 42;
+            if (Number.isFinite(projX) && Number.isFinite(projY) && Number.isFinite(projRadius)) {
+              screenTarget.x = projX;
+              screenTarget.y = projY;
+              screenTarget.radius = projRadius;
+            }
+            screenTarget.weight = isDetailView
+              ? isSelected
+                ? 1.35
+                : 0.55
+              : 0.85 + frontFactor * 0.35;
+            screenTarget.visibleAlpha = isDimmedBackground ? 0.28 : 1;
+            screenTarget.mutationLevel = data.semantic?.current?.mutation ?? 0.5;
+          }
+
+          animateSemanticParts(subject, time, dt, isDimmedBackground);
+          updateSubjectMaterialState(subject, data, hoverBoost, isDimmedBackground, effectiveBreath);
+        }
+
+        focalPulseLight.intensity = maxFocalIntensity;
+
+        renderer.render(scene, camera);
+        dataRain.render(timestamp, dt);
+        jellyDialog.render(time);
+        requestAnimationFrame(animate);
+      }
+
+      // --- 启动运行 ---
+      applyStaticUILanguage();
+      initSpecimenTabs();
+      updateLoadingStatus();
+      updateReadoutUI();
+      rotateToSelectedSubject();
+      autoLoadAllGLBs().catch((err) => console.warn("GLB auto-load skipped:", err));
+      window.addEventListener("load", syncViewportSize);
+      requestAnimationFrame(animate);
+    </script>
+  </body>
+</html>
